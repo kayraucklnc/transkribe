@@ -256,6 +256,19 @@ final class AppModel {
         }
     }
 
+    /// Replaces a message's text with the user's fix and learns the names and terms they corrected.
+    func editText(of segmentIDs: [Segment.ID], from old: String, to new: String, in id: Transcript.ID) {
+        guard old != new else { return }
+        update(id, persist: true) { $0.segments = SegmentEditing.replacing(segmentIDs, in: $0.segments, with: new) }
+        let learned = CorrectionLearner.newTerms(from: old, to: new, known: settings.vocabulary)
+        if learned.isEmpty {
+            showToast("Text fixed")
+        } else {
+            settings.vocabulary += learned
+            showToast("Fixed · Transkribe will listen for \(ListFormatter.localizedString(byJoining: learned.map { "“\($0)”" }))")
+        }
+    }
+
     func delete(_ id: Transcript.ID) {
         guard let transcript = transcript(id) else { return }
         do {

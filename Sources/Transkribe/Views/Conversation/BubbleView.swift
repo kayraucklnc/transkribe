@@ -19,6 +19,7 @@ struct BubbleView: View, Equatable {
     @Environment(PlayerController.self) private var player
     @Environment(AppModel.self) private var model
     @State private var isHovered = false
+    @State private var isEditing = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.bubble.id == rhs.bubble.id && lhs.bubble.isMine == rhs.bubble.isMine
@@ -102,8 +103,17 @@ struct BubbleView: View, Equatable {
             }
             // Click to listen. (Selectable text would swallow the click; Copy is in the context menu.)
             .contentShape(bubbleShape)
+            .onTapGesture(count: 2) { isEditing = true }
             .onTapGesture { player.play(from: paragraph.start) }
-            .help("Click to play from \(TranscriptFormatter.timestamp(paragraph.start))")
+            .help("Click to play from \(TranscriptFormatter.timestamp(paragraph.start)) · double-click to fix the text")
+            .popover(isPresented: $isEditing, arrowEdge: .bottom) {
+                TextFixer(original: paragraph.text) { fixed in
+                    isEditing = false
+                    model.editText(of: paragraph.segmentIDs, from: paragraph.text, to: fixed, in: transcriptID)
+                } onCancel: {
+                    isEditing = false
+                }
+            }
             // Tapbacks sit on top of everything, on the bubble's upper corner.
             .overlay(alignment: mine ? .topLeading : .topTrailing) {
                 if !bubble.reactions.isEmpty {
@@ -160,6 +170,7 @@ struct BubbleView: View, Equatable {
 
     @ViewBuilder private var menu: some View {
         Button("Play from Here") { player.play(from: paragraph.start) }
+        Button("Fix Text…") { isEditing = true }
         Button("Copy") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(paragraph.text, forType: .string)
@@ -249,5 +260,43 @@ private struct Tapbacks: View {
         .scaleEffect(isHovered ? 1.12 : 1)
         .animation(.spring(response: 0.25, dampingFraction: 0.6), value: isHovered)
         .onHover { isHovered = $0 }
+    }
+}
+
+/// Edits one message's text; the words you fix are learned for next time.
+private struct TextFixer: View {
+    let original: String
+    let onSave: (String) -> Void
+    let onCancel: () -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Fix the text").font(.headline)
+            TextEditor(text: $text)
+                .font(.system(size: 14))
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(width: 380, height: 120)
+                .focused($focused)
+            HStack {
+                Text("Names you correct are remembered.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction)
+                Button("Save") { onSave(text) }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(text == original)
+            }
+        }
+        .padding(16)
+        .onAppear {
+            text = original
+            focused = true
+        }
     }
 }
