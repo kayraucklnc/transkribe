@@ -76,3 +76,38 @@ import Testing
         #expect(DiarizationEngine.significantSpeakerCount([]) == 1)
     }
 }
+
+@Suite struct LoopDetectionTests {
+    private func words(_ text: String) -> [Word] {
+        text.split(separator: " ").enumerated().map { Word(start: Double($0.offset), end: Double($0.offset) + 0.5, text: " " + $0.element) }
+    }
+
+    @Test func detectsLoops() {
+        #expect(RepetitionFilter.isLoop("ayırmış " + String(repeating: "ee ", count: 40)))
+        #expect(RepetitionFilter.isLoop("Sağ ol" + String(repeating: "un", count: 60)))
+        #expect(RepetitionFilter.isLoop("Prompları yaza yaza yaza yaza"))
+        #expect(!RepetitionFilter.isLoop("Evet evet, tamam. Yarın konuşuruz."))
+        #expect(!RepetitionFilter.isLoop("No no no, wait a second."))
+    }
+
+    @Test func cleansWordsSoBubblesMatchText() {
+        let cleaned = RepetitionFilter.clean(words: words("ayırmış " + String(repeating: "ee ", count: 40)))
+        #expect(cleaned.map(\.text) == [" ayırmış", " ee"])
+    }
+
+    @Test func dropsRunawayPunctuationWords() {
+        let cleaned = RepetitionFilter.clean(words: words("......... ...... .... yapmış"))
+        #expect(cleaned.map(\.text) == [" yapmış"])
+    }
+
+    @Test func keepsNormalWords() {
+        let input = words("Evet evet, tamam. Yarın konuşuruz.")
+        #expect(RepetitionFilter.clean(words: input) == input)
+    }
+
+    @Test func paragraphsUseCleanedWords() {
+        let segment = Segment(start: 0, end: 20, text: "ayırmış ee", words: words("ayırmış " + String(repeating: "ee ", count: 30)))
+        let paragraph = ParagraphBuilder.paragraphs(from: [segment]).first
+        #expect(paragraph?.words.count == 2)
+    }
+}

@@ -59,7 +59,6 @@ struct BubbleView: View, Equatable {
                 .font(.system(size: 15))
                 .lineSpacing(2.5)
                 .foregroundStyle(mine ? Color.white : Color.primary)
-                .textSelection(.enabled)
         }
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
@@ -80,8 +79,9 @@ struct BubbleView: View, Equatable {
                 }
             }
 
-            // Simultaneous so dragging across the text still selects it.
-            .simultaneousGesture(TapGesture().onEnded { player.play(from: paragraph.start) })
+            // Click to listen. (Selectable text would swallow the click; Copy is in the context menu.)
+            .contentShape(bubbleShape)
+            .onTapGesture { player.play(from: paragraph.start) }
             .help("Click to play from \(TranscriptFormatter.timestamp(paragraph.start))")
     }
 

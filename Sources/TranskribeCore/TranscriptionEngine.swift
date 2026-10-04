@@ -13,6 +13,11 @@ public actor TranscriptionEngine {
         case ready
     }
 
+    /// Languages the user speaks. Detection only chooses among these, so a quiet or noisy
+    /// stretch is never mistaken for a third language, and decoding with a fixed language
+    /// makes Whisper's repetition loops rarer. Empty = any language.
+    public static let supportedLanguages: Set<String> = ["en", "tr"]
+
     public struct Output: Sendable {
         public var segments: [RawSegment]
         public var language: String?
@@ -119,31 +124,88 @@ public actor TranscriptionEngine {
         }
         defer { whisper.segmentDiscoveryCallback = nil }
 
-        let options = DecodingOptions(
-            task: .transcribe,
-            language: nil,
-            temperatureFallbackCount: 3,
-            detectLanguage: true,
-            skipSpecialTokens: true,
-            wordTimestamps: true,
-            chunkingStrategy: .vad
-        )
+        let language = await chooseLanguage(whisper, samples: samples)
+        let options = Self.options(language: language, strict: false)
         let results = try await whisper.transcribe(audioArray: samples, decodeOptions: options)
         try Task.checkCancellation()
 
-        let segments = results
+        var segments = results
             .flatMap(\.segments)
-            .map { segment in
-                RawSegment(
-                    start: TimeInterval(segment.start),
-                    end: TimeInterval(segment.end),
-                    text: segment.text,
-                    words: (segment.words ?? []).map { Word(start: TimeInterval($0.start), end: TimeInterval($0.end), text: $0.word) }
-                )
-            }
+            .map(Self.raw)
             .sorted { $0.start < $1.start }
-        let weights = results.reduce(into: [String: Int]()) { $0[$1.language, default: 0] += $1.text.count }
+        segments = try await repairLoops(segments, samples: samples, whisper: whisper, language: language ?? results.first?.language)
+        let weights = results.reduce(into: [String: Int]()) { $0[language ?? $1.language, default: 0] += $1.text.count }
         return Output(segments: segments, language: Self.dominantLanguage(weights: weights), languageWeights: weights)
+    }
+
+    // MARK: - Decoding
+
+    static func options(language: String?, strict: Bool) -> DecodingOptions {
+        DecodingOptions(
+            task: .transcribe,
+            language: language,
+            temperatureFallbackCount: 5,
+            usePrefillPrompt: true,
+            detectLanguage: language == nil,
+            skipSpecialTokens: true,
+            wordTimestamps: true,
+            // Stricter thresholds make Whisper retry (at higher temperature) sooner when it
+            // starts repeating itself; used when re-doing a passage that looped.
+            compressionRatioThreshold: strict ? 1.8 : 2.4,
+            logProbThreshold: strict ? -0.8 : -1.0,
+            chunkingStrategy: .vad
+        )
+    }
+
+    static func raw(_ segment: TranscriptionSegment) -> RawSegment {
+        RawSegment(
+            start: TimeInterval(segment.start),
+            end: TimeInterval(segment.end),
+            text: segment.text,
+            words: (segment.words ?? []).map { Word(start: TimeInterval($0.start), end: TimeInterval($0.end), text: $0.word) }
+        )
+    }
+
+    /// Picks the most likely supported language from up to three 30-second samples of the audio.
+    private func chooseLanguage(_ whisper: WhisperKit, samples: [Float]) async -> String? {
+        guard !Self.supportedLanguages.isEmpty, samples.count > Int(AudioDecoder.sampleRate) else { return nil }
+        let slice = Int(AudioDecoder.sampleRate) * 30
+        let starts = samples.count <= slice ? [0] : [0, (samples.count - slice) / 2, samples.count - slice]
+        var scores: [String: Float] = [:]
+        for start in starts {
+            let piece = Array(samples[start..<min(samples.count, start + slice)])
+            guard let detection = try? await whisper.detectLangauge(audioArray: piece) else { continue }
+            for language in Self.supportedLanguages {
+                scores[language, default: 0] += detection.langProbs[language] ?? 0
+            }
+        }
+        return Self.bestLanguage(scores)
+    }
+
+    static func bestLanguage(_ scores: [String: Float]) -> String? {
+        scores.filter { $0.value > 0 }.max { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) }?.key
+    }
+
+    /// Whisper sometimes gets stuck repeating a syllable or word over real speech, depending on
+    /// where a chunk happens to start. Re-transcribing just that passage on its own, with a fixed
+    /// language and stricter loop detection, recovers the actual words.
+    private func repairLoops(_ segments: [RawSegment], samples: [Float], whisper: WhisperKit, language: String?) async throws -> [RawSegment] {
+        var result = segments
+        let rate = AudioDecoder.sampleRate
+        for index in result.indices.reversed() where RepetitionFilter.isLoop(result[index].text)
+            || RepetitionFilter.isLoop(result[index].words.map(\.text).joined()) {
+            let segment = result[index]
+            let start = max(0, segment.start - 1), end = min(Double(samples.count) / rate, segment.end + 1)
+            guard end - start > 0.5 else { continue }
+            let clip = Array(samples[Int(start * rate)..<min(samples.count, Int(end * rate))])
+            guard let redo = try? await whisper.transcribe(audioArray: clip, decodeOptions: Self.options(language: language, strict: true)) else { continue }
+            try Task.checkCancellation()
+            let replacement = redo.flatMap(\.segments).map(Self.raw).map { TrackTranscriber.shift($0, by: start) }
+            let text = replacement.map(\.text).joined(separator: " ")
+            guard !replacement.isEmpty, !RepetitionFilter.isLoop(text) else { continue }
+            result.replaceSubrange(index...index, with: replacement)
+        }
+        return result.sorted { $0.start < $1.start }
     }
 
     // MARK: - Helpers

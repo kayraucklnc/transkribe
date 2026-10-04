@@ -51,6 +51,8 @@ struct ConversationView: View {
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(.space) {
+            // Typing a space in a text field (title, questions) must not toggle playback.
+            if NSApp.keyWindow?.firstResponder is NSText { return .ignored }
             player.togglePlayback()
             return .handled
         }

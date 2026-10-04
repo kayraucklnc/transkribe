@@ -24,7 +24,8 @@ public enum TrackMerger {
     public static func merge(_ tracks: [Track]) -> [Segment] {
         let shifted = tracks.enumerated().map { trackIndex, track in
             (source: track.source, segments: track.segments.compactMap { raw -> Segment? in
-                let text = clean(raw.text)
+                let words = RepetitionFilter.clean(words: raw.words)
+                let text = words.isEmpty ? clean(raw.text) : clean(words.map(\.text).joined())
                 guard !text.isEmpty else { return nil }
                 return Segment(
                     id: stableID(track: trackIndex, start: raw.start, end: raw.end),
@@ -32,7 +33,7 @@ public enum TrackMerger {
                     end: raw.end + track.offset,
                     text: text,
                     speaker: raw.speaker,
-                    words: raw.words.map { Word(start: $0.start + track.offset, end: $0.end + track.offset, text: $0.text) }
+                    words: words.map { Word(start: $0.start + track.offset, end: $0.end + track.offset, text: $0.text) }
                 )
             })
         }

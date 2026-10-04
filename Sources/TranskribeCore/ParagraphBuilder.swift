@@ -23,7 +23,7 @@ public enum ParagraphBuilder {
             guard !text.isEmpty else { return }
             let words = segment.words.isEmpty
                 ? [Word(start: segment.start, end: segment.end, text: " " + text)]
-                : segment.words.map { word in
+                : RepetitionFilter.clean(words: segment.words).map { word in
                     word.text.hasPrefix(" ") ? word : Word(start: word.start, end: word.end, text: " " + word.text)
                 }
             if let last = result.last,

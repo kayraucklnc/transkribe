@@ -32,3 +32,11 @@ import Testing
         #expect(TranscriptionEngine.merge(["tr": 10], ["tr": 5, "en": 3]) == ["tr": 15, "en": 3])
     }
 }
+
+@Suite struct SupportedLanguageTests {
+    @Test func picksTheMoreLikelySupportedLanguage() {
+        #expect(TranscriptionEngine.bestLanguage(["en": 0.2, "tr": 1.4]) == "tr")
+        #expect(TranscriptionEngine.bestLanguage(["en": 0, "tr": 0]) == nil)
+        #expect(TranscriptionEngine.supportedLanguages == ["en", "tr"])
+    }
+}

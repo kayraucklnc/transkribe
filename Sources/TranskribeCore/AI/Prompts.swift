@@ -144,21 +144,23 @@ public enum Prompts {
         - A proposal is not a decision, and "we should look into it" is not an action item with an owner. Don't upgrade them.
         </accuracy>
 
-        <citations>
-        Back up key points, decisions and action items with the timestamp of the line where they are said, \
-        copied exactly, e.g. "Launch moves to March [12:34]". One or two timestamps per bullet at most. \
-        Only cite timestamps that appear in the input.
-        </citations>
+        <timestamps>
+        Timestamps are clickable in the app but clutter the text, so use them sparingly: add one only to a \
+        decision or action item when it really helps to jump to that moment, copied exactly from the input \
+        (e.g. "Launch moves to March [12:34]"). At most one per bullet and about five in the whole summary. \
+        Never put timestamps in the first section or in the participants section.
+        </timestamps>
 
         <format>
         Markdown with these sections, in this order, as level-2 headings written exactly as shown. Leave out any section that would \
         be empty; never write "None" or "N/A".
 
         ## \(h.tldr)
-        One short paragraph (2–4 sentences): what the conversation was about and what came out of it.
+        Two or three sentences: what the conversation was about and what came out of it.
 
         ## \(h.keyPoints)
-        Bullets with the substance: facts, arguments, numbers, problems raised. Most important first; merge repetition.
+        The few points that matter most, one sentence each, most important first: facts, numbers, problems \
+        raised. Usually 3–6 bullets; up to about 10 only for long meetings. Merge repetition, skip small talk.
 
         ## \(h.decisions)
         Bullets with what was actually agreed or decided.
@@ -174,9 +176,9 @@ public enum Prompts {
         </format>
 
         <style>
-        Concise and concrete: prefer specifics (numbers, names, dates, examples) over generalities. Let length \
-        follow substance: a five-minute call needs a few bullets, a two-hour meeting may need many. No preamble \
-        or closing remarks; start directly with the first heading.
+        Brief, concrete and easy to scan: the reader should get it in under a minute. Prefer specifics \
+        (numbers, names, dates) over generalities, one sentence per bullet, no filler. A short call needs only \
+        a few lines. No preamble or closing remarks; start directly with the first heading.
         </style>
         """
     }
@@ -188,7 +190,7 @@ public enum Prompts {
         Rules:
         - Use only what the transcript says. Never invent names, numbers, dates, owners or decisions. If a passage is unclear, say so.
         \(hasSpeakers ? "- Speaker labels come from automatic detection and may be wrong; say so if attributions look inconsistent.\n" : "")\
-        - Cite the timestamp of the line you rely on, copied exactly, like [12:34].
+        - Keep it short. Timestamps like [12:34] only on a few decisions or tasks where they help; none elsewhere.
         Write Markdown with these level-2 headings, in order, leaving out empty ones:
         ## TL;DR: one short paragraph.
         ## Key points: bullets, most important first.
@@ -315,11 +317,12 @@ public enum Prompts {
     knowledge; general knowledge is fine only to explain a term the user asks about.
     - If the transcript doesn't contain the answer, say so plainly in the first sentence (e.g. "The \
     transcript doesn't mention a budget."), then mention the closest thing it does say, if anything. Never guess.
-    - Cite the timestamp of each line you rely on, copied exactly, e.g. [12:34]. Quote short phrases in \
-    their original language when the exact wording matters.
+    - Don't add timestamps unless the user asks when something was said or the exact moment clearly \
+    matters; then give one or two, copied exactly, e.g. [12:34]. Quote short phrases in their original \
+    language only when the exact wording matters.
     - Answer in the language of the user's question, even if the conversation is in another language.
-    - Lead with the direct answer, then supporting detail. Keep simple answers short; use Markdown lists \
-    only when they help.
+    - Answer like a helpful colleague who was in the room: lead with the direct answer, usually in one to \
+    three sentences. Add detail or a short list only when the question asks for it.
     - Speech recognition can mishear words and names, and speaker labels may be wrong. When the answer \
     depends on an unclear passage or on who said something, say how certain it is.
     </rules>
@@ -327,7 +330,7 @@ public enum Prompts {
 
     private static let compactQuestionRules = """
     Rules: answer only from the transcript and never guess. If it doesn't contain the answer, say so \
-    plainly. Cite the timestamps of the lines you use, like [12:34]. Answer in the language of the \
-    question. Be brief and direct. Speaker labels and recognized words may contain errors.
+    plainly. No timestamps unless asked when something was said. Answer in the language of the \
+    question, in one to three sentences. Speaker labels and recognized words may contain errors.
     """
 }
