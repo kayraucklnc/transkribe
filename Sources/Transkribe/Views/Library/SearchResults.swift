@@ -5,12 +5,14 @@ import TranskribeCore
 struct SearchResults: View {
     let transcripts: [Transcript]
     let query: String
+    /// When searching by meaning: every word that counts as a match.
+    var terms: [String]?
     @Environment(AppModel.self) private var model
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 16) {
             ForEach(transcripts) { transcript in
-                let hits = TranscriptSearch.hits(in: transcript, query: query)
+                let hits = terms.map { MeaningSearch.hits(in: transcript, terms: $0) } ?? TranscriptSearch.hits(in: transcript, query: query)
                 VStack(alignment: .leading, spacing: 4) {
                     Button {
                         withAnimation(Theme.spring) { model.open(transcript.id, at: hits.first?.start) }
@@ -32,7 +34,7 @@ struct SearchResults: View {
                     .buttonStyle(.plain)
                     .padding(.bottom, 6)
                     ForEach(hits.prefix(4)) { hit in
-                        HitRow(transcript: transcript, hit: hit, query: query)
+                        HitRow(transcript: transcript, hit: hit, query: terms?.joined(separator: " ") ?? query)
                     }
                     if hits.count > 4 {
                         Button("Show all \(hits.count) in conversation") {

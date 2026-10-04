@@ -7,6 +7,12 @@ struct LibraryView: View {
     @State private var isSearching = false
     @State private var isAsking = false
     @State private var askQuestion = ""
+    @State private var meaning: MeaningState = .off
+    @Environment(AIService.self) private var ai
+
+    enum MeaningState: Equatable {
+        case off, searching, found([String]), failed(String)
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -16,13 +22,24 @@ struct LibraryView: View {
                 if isQuerying {
                     Header()
                         .padding(.bottom, 24)
-                    let results = model.filteredTranscripts
-                    if results.isEmpty {
-                        ContentUnavailableView.search(text: model.query)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 30)
+                    MeaningBar(state: meaning) { searchByMeaning() }
+                        .padding(.bottom, 16)
+                    if case .found(let terms) = meaning {
+                        let results = MeaningSearch.rank(model.transcripts, terms: terms)
+                        if results.isEmpty {
+                            ContentUnavailableView.search(text: model.query).frame(maxWidth: .infinity).padding(.top, 30)
+                        } else {
+                            SearchResults(transcripts: results, query: model.query, terms: terms)
+                        }
                     } else {
-                        SearchResults(transcripts: results, query: model.query)
+                        let results = model.filteredTranscripts
+                        if results.isEmpty {
+                            ContentUnavailableView.search(text: model.query)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 30)
+                        } else {
+                            SearchResults(transcripts: results, query: model.query)
+                        }
                     }
                 } else {
                     Hero()
@@ -70,11 +87,64 @@ struct LibraryView: View {
         .sheet(isPresented: $isAsking) {
             LibraryChatView(question: $askQuestion)
         }
+        .onChange(of: model.query) { _, _ in meaning = .off }
         .background {
             Button("") { isSearching = true }
                 .keyboardShortcut("f")
                 .hidden()
         }
+    }
+}
+
+extension LibraryView {
+    private func searchByMeaning() {
+        let query = model.query.trimmingCharacters(in: .whitespaces)
+        meaning = .searching
+        Task {
+            do {
+                let terms = try await ai.expandSearch(query, languages: model.settings.languages)
+                if model.query.trimmingCharacters(in: .whitespaces) == query { meaning = .found(terms) }
+            } catch {
+                meaning = .failed(error.localizedDescription)
+            }
+        }
+    }
+}
+
+/// "Search by meaning" and, once used, the words it searched for.
+private struct MeaningBar: View {
+    let state: LibraryView.MeaningState
+    let search: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            switch state {
+            case .off:
+                Button(action: search) { Label("Search by meaning", systemImage: "sparkle.magnifyingglass") }
+                    .buttonStyle(.bordered)
+                Text("Also finds related words and translations, like “fiyat” for “price”.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .searching:
+                ProgressView().controlSize(.small)
+                Text("Thinking of related words…").font(.callout).foregroundStyle(.secondary)
+            case .found(let terms):
+                Image(systemName: "sparkle.magnifyingglass").foregroundStyle(Theme.record)
+                FlowLayout(spacing: 6) {
+                    ForEach(terms, id: \.self) { term in
+                        Text(term)
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.primary.opacity(0.07), in: Capsule())
+                    }
+                }
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.callout)
+                Button("Try Again", action: search).buttonStyle(.borderless)
+            }
+        }
+        .animation(Theme.spring, value: state)
     }
 }
 

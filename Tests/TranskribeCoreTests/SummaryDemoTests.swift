@@ -34,3 +34,25 @@ struct ActionItemsDemoTests {
         #expect(!items.isEmpty)
     }
 }
+
+/// Expands a search with Apple Intelligence and runs it on the real library: TRANSKRIBE_MEANING_QUERY=money
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["TRANSKRIBE_MEANING_QUERY"] != nil))
+struct MeaningSearchDemoTests {
+    @Test func expandAndSearchLibrary() async throws {
+        let query = ProcessInfo.processInfo.environment["TRANSKRIBE_MEANING_QUERY"]!
+        let useApple = ProcessInfo.processInfo.environment["TRANSKRIBE_MEANING_APPLE"] == "1"
+        let provider: any AIProvider = useApple ? AppleIntelligenceProvider() : ClaudeCodeProvider()
+        let model = useApple ? try #require(provider.models.first) : ClaudeCodeProvider.haiku
+        var reply = ""
+        for try await delta in provider.stream(model: model, system: MeaningSearch.system(languages: ["en", "tr", "it"]),
+                                               messages: [AIMessage(role: .user, text: query)]) { reply += delta }
+        let terms = MeaningSearch.parseTerms(reply, query: query)
+        print("TERMS", terms)
+        let library = ConversationLibrary.load()
+        for transcript in MeaningSearch.rank(library.transcripts, terms: terms) {
+            let hits = MeaningSearch.hits(in: transcript, terms: terms)
+            print("HIT", transcript.title, hits.count, hits.first?.text ?? "")
+        }
+        #expect(terms.count > 1)
+    }
+}

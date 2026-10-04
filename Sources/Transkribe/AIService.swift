@@ -91,6 +91,23 @@ final class AIService {
         }
     }
 
+    // MARK: - Search by meaning
+
+    /// Words to look for that mean the same as `query`, in the user's languages, from the chosen
+    /// model (Claude's small model when using Claude Code: it's quick and good across languages).
+    func expandSearch(_ query: String, languages: [String]) async throws -> [String] {
+        let chosen = selectedModel.provider == .claudeCode ? ClaudeCodeProvider.haiku : selectedModel
+        guard let provider = provider(for: chosen), isAvailable(chosen) else {
+            throw AIError("Choose an AI model in Settings → AI to search by meaning.")
+        }
+        var reply = ""
+        for try await delta in provider.stream(model: chosen, system: MeaningSearch.system(languages: languages),
+                                               messages: [AIMessage(role: .user, text: query)]) {
+            reply += delta
+        }
+        return MeaningSearch.parseTerms(reply, query: query)
+    }
+
     // MARK: - To-dos
 
     /// Conversations whose to-dos are being looked for, with an error if that failed.
