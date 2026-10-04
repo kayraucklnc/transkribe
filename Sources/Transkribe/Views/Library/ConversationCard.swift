@@ -76,6 +76,13 @@ struct ConversationCard: View {
     }
 
     private var snippet: String {
+        if let summary = transcript.summary {
+            // First prose line of the summary, without Markdown syntax.
+            let line = summary.markdown.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .first { !$0.isEmpty && !$0.hasPrefix("#") && !$0.hasPrefix("-") }
+            if let line { return line.replacingOccurrences(of: #"\*\*|\[\d+:\d+(:\d+)?\]"#, with: "", options: .regularExpression) }
+        }
         let text = transcript.segments.prefix(8).map(\.text).joined(separator: " ")
         switch transcript.status {
         case .pending where text.isEmpty: return "Waiting to transcribe…"

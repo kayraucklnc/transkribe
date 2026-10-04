@@ -37,3 +37,23 @@ enum ConversationRenderer {
         """
     }
 }
+
+extension AIModel {
+    static let seekScheme = "transkribe"
+
+    /// Rewrites `[12:34]` citations as Markdown links (`transkribe://seek/754`) the UI can open
+    /// to jump the player there. Citations that are already links are left alone.
+    public static func linkingTimestamps(in markdown: String) -> String {
+        var result = markdown
+        for (range, seconds) in parseTimestamps(in: markdown).reversed() {
+            if markdown[range.upperBound...].hasPrefix("(") { continue }
+            result.insert(contentsOf: "(\(seekScheme)://seek/\(Int(seconds)))", at: range.upperBound)
+        }
+        return result
+    }
+
+    public static func seekTime(from url: URL) -> TimeInterval? {
+        guard url.scheme == seekScheme, url.host == "seek", let value = Double(url.lastPathComponent) else { return nil }
+        return value
+    }
+}

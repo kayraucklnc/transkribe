@@ -11,6 +11,7 @@ struct TranskribeApp: App {
             RootView()
                 .environment(delegate.model)
                 .environment(delegate.player)
+                .environment(delegate.ai)
                 .frame(minWidth: 760, minHeight: 520)
         }
         .defaultSize(width: 1080, height: 720)
@@ -33,6 +34,11 @@ struct TranskribeApp: App {
             }
         }
 
+        Settings {
+            SettingsView()
+                .environment(delegate.ai)
+        }
+
         MenuBarExtra {
             MenuBarView()
                 .environment(delegate.model)
@@ -47,6 +53,7 @@ struct TranskribeApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor let model = AppModel()
     @MainActor let player = PlayerController()
+    @MainActor lazy var ai = AIService(model: model)
 
     /// Files dropped on the Dock icon or opened with "Open With → Transkribe".
     func application(_ application: NSApplication, open urls: [URL]) {

@@ -86,7 +86,7 @@ private func longTranscript(lines: Int = 120) -> Transcript {
         let call = try #require(provider.calls.first)
         #expect(call.system.contains("Write in Turkish"))
         #expect(call.system.contains("Özet, Önemli noktalar"))
-        #expect(call.system.contains("## Who said what"))
+        #expect(call.system.contains("## Kim ne dedi")) // headings are localized in the template
         #expect(call.messages.count == 1)
         #expect(call.messages[0].role == .user)
         #expect(call.messages[0].text.contains("<transcript>\n[0:00] Ayşe: Rutin durum güncellemesi numara 0."))

@@ -87,3 +87,38 @@ import Testing
         #expect(AIModel.parseTimestamps(in: text).map(\.seconds) == [195, 196])
     }
 }
+
+@Suite struct TimestampLinkTests {
+    @Test func turnsCitationsIntoSeekLinks() {
+        let linked = AIModel.linkingTimestamps(in: "Agreed on Friday [12:34] and later [1:02:03].")
+        #expect(linked == "Agreed on Friday [12:34](transkribe://seek/754) and later [1:02:03](transkribe://seek/3723).")
+    }
+
+    @Test func leavesExistingLinksAlone() {
+        let text = "See [12:34](https://example.com)."
+        #expect(AIModel.linkingTimestamps(in: text) == text)
+    }
+
+    @Test func parsesSeekURLs() {
+        #expect(AIModel.seekTime(from: URL(string: "transkribe://seek/754")!) == 754)
+        #expect(AIModel.seekTime(from: URL(string: "https://example.com")!) == nil)
+    }
+}
+
+@Suite struct LocalizedHeadingTests {
+    @Test func turkishSummaryTemplateUsesTurkishHeadings() {
+        var transcript = Fixtures.transcript()
+        transcript.language = "tr"
+        let prompt = Prompts.summarySystem(for: transcript, compact: false)
+        #expect(prompt.contains("## Özet"))
+        #expect(prompt.contains("## Yapılacaklar"))
+        #expect(!prompt.contains("## Key points"))
+        #expect(!prompt.contains("## TL;DR"))
+    }
+
+    @Test func englishKeepsEnglishHeadings() {
+        var transcript = Fixtures.transcript()
+        transcript.language = "en"
+        #expect(Prompts.summarySystem(for: transcript, compact: false).contains("## Key points"))
+    }
+}

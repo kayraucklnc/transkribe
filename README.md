@@ -2,15 +2,15 @@
 
 A tiny Mac app that transcribes everything you give it, privately and on your Mac.
 
-- **Drop any audio or video file** onto the window (or its Dock icon), paste it with ⌘V, or press ⌘O. Voice Memos, Zoom recordings, podcasts, `.m4a`, `.mp3`, `.wav`, `.mov`, `.mp4` and more all work.
-- **Record** your microphone, your Mac's system audio (calls, meetings, videos), or both. The menu bar icon starts and stops recordings without opening the window.
-- **Know who said what.** Speakers are detected automatically (Speaker 1, 2, 3…), tuned for real conversations and phone calls. In “Mic + System” mode you are always *Me*, which is the most reliable way to separate the two sides of a call. Rename speakers with a click and see how much each person talked. If detection is off, **Adjust** sets the number of people, right-clicking a speaker merges them into another, and right-clicking a paragraph changes its speaker.
-- **Every language, auto-detected.** Turkish, English, and the ~100 languages Whisper supports. No settings.
-- **Listen along.** The floating player's timeline shows who spoke when. During playback the current word lights up and the transcript follows. Click a timestamp to jump; Space plays and pauses.
-- **Search** across all transcripts, with matches highlighted inline. Accents and Turkish ı/İ don't matter (`istanbul` finds “İstanbul”).
-- **Copy or export** as text, Markdown, or subtitles (`.srt`), with speaker names.
+- **Drop any audio or video file** onto the window (or its Dock icon), paste it with ⌘V, or press ⌘O. Voice Memos, Zoom recordings, podcasts, `.m4a`, `.mp3`, `.wav`, `.mov`, `.mp4`, any length.
+- **Record** your microphone, your Mac's system audio (calls, meetings, videos), or both, from the window or the menu bar. The conversation is transcribed **live, in batches, while you talk**. Batches never cut a sentence or leave a gap, and hours-long recordings or files use constant memory and resume after a quit.
+- **Read it like a chat.** Pick which speaker is you, and your words appear on the right like sent iMessages, with everyone else on the left. During playback the spoken word lights up. Double-click a bubble to play it, and right-click it to change its speaker.
+- **Know who said what.** Speakers are detected automatically, tuned for real conversations and phone calls. Rename people, merge two voices, reassign a bubble, or tell the app how many people talked.
+- **Summarize and ask.** One click writes a summary in the conversation's language: key points, decisions, action items with owners, open questions, and who said what. Every point links to the moment it was said. Or ask questions in a chat. Choose the model: Claude through your existing Claude Code login (no setup), Apple Intelligence on-device, or Claude with an API key.
+- **Every language, auto-detected.** Turkish, English, and the ~100 languages Whisper supports. Search covers every conversation, and accents and Turkish ı/İ don't matter.
+- **Copy or export** as text, Markdown, or subtitles (`.srt`).
 
-Transcription runs locally with [WhisperKit](https://github.com/argmaxinc/WhisperKit) (OpenAI Whisper large-v3 turbo, Core ML) and speaker detection with [FluidAudio](https://github.com/FluidInference/FluidAudio) (LS-EEND, CALLHOME variant). Runaway repetitions Whisper sometimes produces ("olunununun…") are removed automatically. Nothing leaves your Mac.
+Transcription runs locally with [WhisperKit](https://github.com/argmaxinc/WhisperKit) (Whisper large-v3 turbo) and speaker detection with [FluidAudio](https://github.com/FluidInference/FluidAudio) (LS-EEND). Audio never leaves your Mac. Only the text you choose to summarize or ask about goes to the model you picked, and Apple Intelligence keeps even that on-device.
 
 ## Build & run
 
@@ -48,5 +48,5 @@ swift test                                                           # unit test
 TRANSKRIBE_INTEGRATION=1 swift test --filter TranscriptionIntegrationTests  # real models: Turkish, English, speakers
 ```
 
-- `Sources/TranskribeCore`: data model, storage, search, formatting, audio decoding, transcription (`TranscriptionEngine`), speaker detection (`DiarizationEngine`, `SpeakerAssigner`), repetition cleanup (`RepetitionFilter`), recorders
+- `Sources/TranskribeCore`: data model, windowed pipeline (`Pipeline/`: `WindowPlanner`, `TrackTranscriber`, `PCMStore`), AI layer (`AI/`: providers, `Summarizer`, `Assistant`, `Prompts`), chat layout (`ChatLayout`),, storage, search, formatting, audio decoding, transcription (`TranscriptionEngine`), speaker detection (`DiarizationEngine`, `SpeakerAssigner`), repetition cleanup (`RepetitionFilter`), recorders
 - `Sources/Transkribe`: SwiftUI app (state in `AppModel`, playback in `PlayerController`, views in `Views/`). Uses Liquid Glass on macOS 26, with material fallbacks on 14–15.

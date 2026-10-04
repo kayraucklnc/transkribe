@@ -27,7 +27,8 @@ struct ConversationView: View {
                         .padding(.bottom, 18)
                     }
             }
-            .frame(maxWidth: .infinity)
+            .frame(minWidth: 380, maxWidth: .infinity)
+            .layoutPriority(1)
             .background(Theme.canvas)
             if showsInsights, !isLive {
                 InsightsPanel(transcript: transcript)

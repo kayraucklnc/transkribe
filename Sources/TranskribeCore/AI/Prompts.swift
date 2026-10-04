@@ -27,6 +27,27 @@ public enum Prompts {
         return text + ". Keep names, product names and technical terms as they appear in the transcript."
     }
 
+    /// Summary section headings, written into the template itself: models follow a literal
+    /// template over an instruction to translate it.
+    struct SectionHeadings {
+        var tldr = "TL;DR", keyPoints = "Key points", decisions = "Decisions", actions = "Action items"
+        var openQuestions = "Open questions", whoSaidWhat = "Who said what", unassigned = "Unassigned"
+    }
+
+    static func headings(for transcript: Transcript) -> SectionHeadings {
+        switch transcript.language?.lowercased().prefix(2) {
+        case "tr": SectionHeadings(tldr: "Özet", keyPoints: "Önemli noktalar", decisions: "Kararlar", actions: "Yapılacaklar",
+                                   openQuestions: "Açık sorular", whoSaidWhat: "Kim ne dedi", unassigned: "Atanmadı")
+        case "de": SectionHeadings(tldr: "Kurzfassung", keyPoints: "Wichtige Punkte", decisions: "Entscheidungen", actions: "Aufgaben",
+                                   openQuestions: "Offene Fragen", whoSaidWhat: "Wer hat was gesagt", unassigned: "Nicht zugewiesen")
+        case "fr": SectionHeadings(tldr: "En bref", keyPoints: "Points clés", decisions: "Décisions", actions: "Actions",
+                                   openQuestions: "Questions ouvertes", whoSaidWhat: "Qui a dit quoi", unassigned: "Non attribué")
+        case "es": SectionHeadings(tldr: "Resumen", keyPoints: "Puntos clave", decisions: "Decisiones", actions: "Tareas",
+                                   openQuestions: "Preguntas abiertas", whoSaidWhat: "Quién dijo qué", unassigned: "Sin asignar")
+        default: SectionHeadings()
+        }
+    }
+
     /// Section headings for languages users are likely to use, so the model doesn't improvise.
     static let localizedHeadings: [String: String] = [
         "tr": "Özet, Önemli noktalar, Kararlar, Yapılacaklar, Açık sorular, Kim ne dedi; unassigned owner: Atanmadı",
@@ -84,10 +105,10 @@ public enum Prompts {
         let language = outputLanguageInstruction(for: transcript)
         return compact
             ? compactSummarySystem(input: input, language: language, hasSpeakers: transcript.hasSpeakers)
-            : fullSummarySystem(input: input, language: language, hasSpeakers: transcript.hasSpeakers)
+            : fullSummarySystem(input: input, language: language, hasSpeakers: transcript.hasSpeakers, headings: headings(for: transcript))
     }
 
-    private static func fullSummarySystem(input: String, language: String, hasSpeakers: Bool) -> String {
+    private static func fullSummarySystem(input: String, language: String, hasSpeakers: Bool, headings h: SectionHeadings) -> String {
         let speakerAccuracy = hasSpeakers
             ? """
             - Speaker labels may be wrong: one person can be split across two labels, or two people merged \
@@ -100,7 +121,7 @@ public enum Prompts {
         let whoSaidWhat = hasSpeakers
             ? """
 
-            ## Who said what
+            ## \(h.whoSaidWhat)
             One line per participant: `- **Name** — their role or position and main contributions, in one sentence`. \
             Use the speaker names exactly as they appear in the transcript.
             """
@@ -130,24 +151,24 @@ public enum Prompts {
         </citations>
 
         <format>
-        Markdown with these sections, in this order, as level-2 headings. Leave out any section that would \
+        Markdown with these sections, in this order, as level-2 headings written exactly as shown. Leave out any section that would \
         be empty; never write "None" or "N/A".
 
-        ## TL;DR
+        ## \(h.tldr)
         One short paragraph (2–4 sentences): what the conversation was about and what came out of it.
 
-        ## Key points
+        ## \(h.keyPoints)
         Bullets with the substance: facts, arguments, numbers, problems raised. Most important first; merge repetition.
 
-        ## Decisions
+        ## \(h.decisions)
         Bullets with what was actually agreed or decided.
 
-        ## Action items
+        ## \(h.actions)
         A checklist, one task per line: `- [ ] Owner — task (due: deadline)`. The owner is whoever committed \
-        to the task or was asked to do it; write "Unassigned" (in the output language) if nobody was. Add the \
+        to the task or was asked to do it; write "\(h.unassigned)" if nobody was. Add the \
         due part only when a deadline was mentioned.
 
-        ## Open questions
+        ## \(h.openQuestions)
         Bullets with unanswered questions, unresolved disagreements and things left to follow up.
         \(whoSaidWhat)
         </format>

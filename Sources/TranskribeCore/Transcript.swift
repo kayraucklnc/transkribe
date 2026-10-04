@@ -115,6 +115,8 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var speakerNames: [Int: String]
     /// Which speaker is the user ("me"), shown on the right like a sent message.
     public var meSpeaker: Int?
+    public var summary: AISummary?
+    public var chat: AIChat?
 
     public init(
         id: UUID = UUID(),
@@ -139,7 +141,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, createdAt, duration, language, tracks, segments, status, speakerNames, meSpeaker
+        case id, title, createdAt, duration, language, tracks, segments, status, speakerNames, meSpeaker, summary, chat
     }
 
     public init(from decoder: Decoder) throws {
@@ -154,6 +156,8 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
         status = try container.decode(TranscriptStatus.self, forKey: .status)
         speakerNames = try container.decodeIfPresent([Int: String].self, forKey: .speakerNames) ?? [:]
         meSpeaker = try container.decodeIfPresent(Int.self, forKey: .meSpeaker)
+        summary = try container.decodeIfPresent(AISummary.self, forKey: .summary)
+        chat = try container.decodeIfPresent(AIChat.self, forKey: .chat)
     }
 
     /// The user's own speaker: their explicit choice, or the microphone track of a Mic + System recording.

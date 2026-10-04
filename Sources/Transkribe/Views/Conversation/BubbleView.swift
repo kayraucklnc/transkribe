@@ -54,11 +54,13 @@ struct BubbleView: View, Equatable {
     }
 
     private var bubbleBody: some View {
-        Text(attributedText)
-            .font(.system(size: 15))
-            .lineSpacing(2.5)
-            .foregroundStyle(mine ? Color.white : Color.primary)
-            .textSelection(.enabled)
+        CappedWidth(maximum: 500) {
+            Text(attributedText)
+                .font(.system(size: 15))
+                .lineSpacing(2.5)
+                .foregroundStyle(mine ? Color.white : Color.primary)
+                .textSelection(.enabled)
+        }
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .background {
@@ -166,5 +168,20 @@ struct BubbleView: View, Equatable {
             result += piece
         }
         return result
+    }
+}
+
+/// Wraps text at `maximum` points but lets short text stay as narrow as it is, like a chat bubble.
+private struct CappedWidth: Layout {
+    var maximum: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        let width = min(proposal.width ?? maximum, maximum)
+        return child.sizeThatFits(ProposedViewSize(width: width, height: nil))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
     }
 }
