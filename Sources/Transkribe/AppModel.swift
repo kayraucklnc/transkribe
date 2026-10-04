@@ -52,7 +52,22 @@ final class AppModel {
 
     static let levelHistory = 48
     let store: TranscriptStore
-    let engine: TranscriptionEngine
+    /// The engine for new transcriptions, built from `settings`.
+    private(set) var engine: any SpeechEngine
+    /// Shared so the European model loads once, whichever engine uses it.
+    let european = ParakeetEngine()
+    var settings: TranscriptionSettings {
+        didSet {
+            settings.save()
+            if oldValue.quality != settings.quality || oldValue.languages != settings.languages
+                || oldValue.vocabulary != settings.vocabulary {
+                engine = Self.makeEngine(settings: settings, quality: settings.quality, european: european)
+                preloadModel()
+            }
+        }
+    }
+    var enhanceTask: Task<Void, Never>?
+    var enhancingID: Transcript.ID?
     let diarizer: DiarizationEngine
     var session: (recorder: RecordingSession, transcript: Transcript)?
     /// Transcription that runs alongside the current recording.
@@ -67,10 +82,12 @@ final class AppModel {
     private static let selectionKey = "selectedTranscript"
 
     init(store: TranscriptStore = TranscriptStore(rootDirectory: TranscriptStore.defaultRoot),
-         engine: TranscriptionEngine = TranscriptionEngine(),
+
          diarizer: DiarizationEngine = DiarizationEngine()) {
         self.store = store
-        self.engine = engine
+        let settings = TranscriptionSettings.load()
+        self.settings = settings
+        self.engine = Self.makeEngine(settings: settings, quality: settings.quality, european: european)
         self.diarizer = diarizer
         recordingSource = UserDefaults.standard.string(forKey: Self.sourceKey).flatMap(RecordingSource.init) ?? .microphone
         do {
@@ -82,8 +99,35 @@ final class AppModel {
         let saved = UserDefaults.standard.string(forKey: Self.selectionKey).flatMap(UUID.init)
         selection = transcripts.first { $0.id == saved }?.id
         FileImport.removeTemporaryCopies()
+        if settings.completedOnboarding {
+            processQueue()
+            preloadModel()
+        }
+        startEnhancing()
+    }
+
+    func finishOnboarding() {
         processQueue()
         preloadModel()
+    }
+
+    /// Instant → macOS's recognizer; Balanced/Best → Whisper (turbo / full), with the European
+    /// model for English, Italian and similar languages.
+    static func makeEngine(settings: TranscriptionSettings, quality: TranscriptionQuality, european: ParakeetEngine) -> any SpeechEngine {
+        let languages = Set(settings.languages.isEmpty ? Array(TranscriptionEngine.supportedLanguages) : settings.languages)
+        let usesEuropean = languages.contains(where: EngineCatalog.usesEuropeanModel)
+        switch quality {
+        case .instant:
+            if #available(macOS 26, *), AppleSpeechEngine.isAvailable {
+                return AppleSpeechEngine(languages: Array(languages), vocabulary: settings.vocabulary)
+            }
+            fallthrough
+        case .balanced:
+            return TranscriptionEngine(languages: languages, vocabulary: settings.vocabulary, european: usesEuropean ? european : nil)
+        case .best:
+            return TranscriptionEngine(model: TranscriptionEngine.bestModel, languages: languages,
+                                       vocabulary: settings.vocabulary, european: usesEuropean ? european : nil)
+        }
     }
 
     // MARK: - Queries

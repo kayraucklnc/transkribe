@@ -26,7 +26,7 @@ public enum TrackMerger {
             (source: track.source, segments: track.segments.compactMap { raw -> Segment? in
                 let words = RepetitionFilter.clean(words: raw.words)
                 let text = words.isEmpty ? clean(raw.text) : clean(words.map(\.text).joined())
-                guard !text.isEmpty else { return nil }
+                guard !text.isEmpty, !Hallucinations.isHallucination(text) else { return nil }
                 return Segment(
                     id: stableID(track: trackIndex, start: raw.start),
                     start: raw.start + track.offset,

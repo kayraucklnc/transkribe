@@ -121,4 +121,33 @@ struct TranscriptionIntegrationTests {
         #expect(Set(one.map(\.speaker)).count == 1)
         #expect(Set(two.map(\.speaker)).count == 2)
     }
+
+    @Test func appleEngineTranscribesItalian() async throws {
+        guard #available(macOS 26, *), AppleSpeechEngine.isAvailable else { return }
+        let engine = AppleSpeechEngine(languages: ["it", "en"], vocabulary: ["Milano"])
+        try await engine.prepare { _ in }
+        let samples = try await AudioDecoder.decode(url: try speak("Buongiorno a tutti. Domani presentiamo il nuovo progetto al cliente di Milano.", voice: "Alice"))
+        let output = try await engine.transcribe(samples: samples) { _ in }
+        let text = TranscriptSearch.normalize(output.segments.map(\.text).joined(separator: " "))
+        print("APPLE", output.language ?? "-", text)
+        #expect(output.language == "it")
+        #expect(text.contains("milano"))
+        #expect(output.segments.allSatisfy { !$0.words.isEmpty })
+    }
+
+    @Test func parakeetHandlesItalianAndWhisperKeepsTurkish() async throws {
+        let parakeet = ParakeetEngine()
+        let engine = TranscriptionEngine(languages: ["tr", "it", "en"], european: parakeet)
+        try await engine.prepare()
+        let italian = try await AudioDecoder.decode(url: try speak("Buongiorno a tutti. Domani presentiamo il nuovo progetto al cliente di Milano.", voice: "Alice"))
+        let it = try await engine.transcribe(samples: italian)
+        let turkish = try await AudioDecoder.decode(url: try speak("Merhaba, bugün hava çok güzel. Yarın İstanbul'a gidiyoruz.", voice: "Yelda"))
+        let tr = try await engine.transcribe(samples: turkish)
+        print("PARAKEET it:", it.segments.map(\.text), "tr:", tr.segments.map(\.text))
+        #expect(await parakeet.isReady)
+        #expect(it.language == "it")
+        #expect(TranscriptSearch.normalize(it.segments.map(\.text).joined()).contains("milano"))
+        #expect(tr.language == "tr")
+        #expect(TranscriptSearch.normalize(tr.segments.map(\.text).joined()).contains("istanbul"))
+    }
 }

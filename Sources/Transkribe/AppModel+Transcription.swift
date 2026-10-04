@@ -97,14 +97,18 @@ extension AppModel {
     /// Transcribes every track in windows (all tracks progress together, which matters while a
     /// recording is still running), shows results as they are committed, saves checkpoints, and
     /// finishes with speaker labels and a merged transcript.
-    func runPipeline(for transcript: Transcript, sources: [(AudioTrack, AudioSource)], isLive: Bool) async throws {
+    func runPipeline(for transcript: Transcript, sources: [(AudioTrack, AudioSource)], isLive: Bool,
+                     engine overrideEngine: (any SpeechEngine)? = nil, quality overrideQuality: TranscriptionQuality? = nil,
+                     showsProgress: Bool = true) async throws {
+        let engine = overrideEngine ?? self.engine
+        let quality = overrideQuality ?? settings.quality
         let id = transcript.id
         let progress = PipelineProgress(trackCount: sources.count)
         let planner: WindowPlanner = isLive ? .live : .file
 
         let results = try await withThrowingTaskGroup(of: (Int, TrackTranscriber.Result).self) { group in
             for (index, (track, source)) in sources.enumerated() {
-                let checkpoint = isLive ? nil : store.loadCheckpoint(for: transcript, track: track)
+                let checkpoint = isLive || !showsProgress ? nil : store.loadCheckpoint(for: transcript, track: track)
                 let diarization = track.source == .microphone ? nil : try? await diarizer.makeStream()
                 let transcriber = TrackTranscriber(source: source, engine: engine, diarization: diarization, planner: planner,
                                                    shouldPause: { ResourceGovernor.currentPauseReason() })
@@ -114,6 +118,7 @@ extension AppModel {
                         resume: checkpoint?.segments ?? [],
                         resumeUntil: checkpoint?.committedUntil ?? 0
                     ) { [weak self] update in
+                        guard showsProgress else { return }
                         await self?.pipelineDidUpdate(id: id, track: track, index: index, update: update,
                                                       progress: progress, isLive: isLive)
                     }
@@ -145,6 +150,7 @@ extension AppModel {
             $0.segments = segments
             $0.language = language ?? $0.language // final, text-weighted choice replaces live guesses
             $0.status = .done
+            $0.quality = quality
             if $0.title.hasPrefix(TitleGenerator.recordingPrefix), let suggestion = TitleGenerator.suggestedTitle(from: segments) {
                 $0.title = suggestion
             }
@@ -171,7 +177,7 @@ extension AppModel {
         } else {
             activity[id] = isLive ? .live : .transcribing(progress.overall)
         }
-        if progressUpdate.pending.isEmpty {
+        if progressUpdate.pending.isEmpty, transcript.status == .transcribing {
             try? store.saveCheckpoint(
                 TrackCheckpoint(committedUntil: progressUpdate.committedUntil, segments: progressUpdate.committed,
                                 language: progressUpdate.language),

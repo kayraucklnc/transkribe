@@ -25,6 +25,13 @@ struct RootView: View {
         }
         .animation(Theme.spring, value: model.selection)
         .animation(Theme.spring, value: model.isRecording)
+        .overlay {
+            if !model.settings.completedOnboarding {
+                OnboardingView()
+                    .transition(.opacity.combined(with: .scale(scale: 1.02)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.5), value: model.settings.completedOnboarding)
         .overlay(alignment: .top) {
             if let toast = model.toast {
                 Toast(message: toast)

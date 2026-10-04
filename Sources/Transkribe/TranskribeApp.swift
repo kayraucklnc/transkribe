@@ -37,6 +37,7 @@ struct TranskribeApp: App {
         Settings {
             SettingsView()
                 .environment(delegate.ai)
+                .environment(delegate.model)
         }
 
         MenuBarExtra {

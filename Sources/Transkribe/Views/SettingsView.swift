@@ -2,6 +2,85 @@ import SwiftUI
 import TranskribeCore
 
 struct SettingsView: View {
+    var body: some View {
+        TabView {
+            TranscriptionSettingsTab()
+                .tabItem { Label("Transcription", systemImage: "waveform") }
+            VocabularySettingsTab()
+                .tabItem { Label("Vocabulary", systemImage: "character.book.closed") }
+            AISettingsTab()
+                .tabItem { Label("AI", systemImage: "sparkles") }
+        }
+        .frame(width: 600, height: 560)
+    }
+}
+
+private struct TranscriptionSettingsTab: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                Section(title: "Languages you speak") {
+                    LanguagePicker(selection: $model.settings.languages)
+                }
+                Section(title: "How Transkribe listens") {
+                    QualityPicker(quality: $model.settings.quality, languages: model.settings.languages)
+                }
+                Section(title: "Background improvement") {
+                    Toggle(isOn: $model.settings.enhanceWhenIdle) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Make transcripts even better while you're away")
+                            Text("When your Mac is idle and plugged in, recent conversations are quietly redone at the highest quality.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(model.settings.quality == .best)
+                }
+                Button("Show Welcome Tour Again") {
+                    model.settings.completedOnboarding = false
+                }
+                .buttonStyle(.link)
+            }
+            .padding(24)
+        }
+    }
+}
+
+private struct VocabularySettingsTab: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Names and words to recognize")
+                .font(.headline)
+            Text("People, companies, products and jargon you use. Transkribe listens for them and fixes near-misses.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            VocabularyEditor(words: $model.settings.vocabulary)
+            Spacer()
+        }
+        .padding(24)
+    }
+}
+
+private struct Section<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.headline)
+            content
+        }
+    }
+}
+
+private struct AISettingsTab: View {
     @Environment(AIService.self) private var ai
     @State private var apiKey = ""
     @State private var saved = false
@@ -10,7 +89,7 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var ai = ai
         Form {
-            Section("AI model") {
+            SwiftUI.Section("AI model") {
                 Picker("Default model", selection: $ai.selectedModel) {
                     ForEach(ai.allModels) { model in
                         Text(model.displayName).tag(model)
@@ -26,7 +105,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            Section {
+            SwiftUI.Section {
                 SecureField("sk-ant-…", text: $apiKey)
                 HStack {
                     Button("Save Key") {
@@ -45,11 +124,10 @@ struct SettingsView: View {
             } header: {
                 Text("Anthropic API key (optional)")
             } footer: {
-                Text("Only needed if you don't use Claude Code. Stored in your Keychain. Transcripts are sent to the model you choose; Apple Intelligence keeps everything on this Mac.")
+                Text("Only needed if you don't use Claude Code. Stored in your Keychain.")
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 420)
         .task { await ai.refreshAvailability() }
     }
 }

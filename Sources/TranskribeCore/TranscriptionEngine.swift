@@ -17,6 +17,8 @@ public actor TranscriptionEngine {
     /// stretch is never mistaken for a third language, and decoding with a fixed language
     /// makes Whisper's repetition loops rarer. Empty = any language.
     public static let supportedLanguages: Set<String> = ["en", "tr", "it"]
+    /// Large-v3 (full): slower, most accurate, notably better on Turkish.
+    public static let bestModel = "openai_whisper-large-v3_947MB"
 
     public struct Output: Sendable {
         public var segments: [RawSegment]
@@ -27,6 +29,10 @@ public actor TranscriptionEngine {
 
     private let model: String
     private let modelsDirectory: URL
+    private let languages: Set<String>
+    private let vocabulary: [String]
+    /// Used instead of Whisper for languages it handles better (English, Italian, …).
+    private let european: ParakeetEngine?
     private var loaded: LoadedModel?
     private var preparing: Task<LoadedModel, Error>?
     private var isRunning = false
@@ -34,9 +40,18 @@ public actor TranscriptionEngine {
     private var lastLanguage: String?
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
-    public init(model: String = TranscriptionEngine.defaultModel, modelsDirectory: URL = TranscriptionEngine.defaultModelsDirectory) {
+    public init(
+        model: String = TranscriptionEngine.defaultModel,
+        modelsDirectory: URL = TranscriptionEngine.defaultModelsDirectory,
+        languages: Set<String> = TranscriptionEngine.supportedLanguages,
+        vocabulary: [String] = [],
+        european: ParakeetEngine? = nil
+    ) {
         self.model = model
         self.modelsDirectory = modelsDirectory
+        self.languages = languages
+        self.vocabulary = vocabulary
+        self.european = european
     }
 
     public static var defaultModelsDirectory: URL {
@@ -69,6 +84,9 @@ public actor TranscriptionEngine {
             )
             let whisper = try await WhisperKit(config)
             FileManager.default.createFile(atPath: preparedMarker.path, contents: nil)
+            if let european = self.european {
+                try? await european.prepare { fraction in onProgress(.downloading(fraction)) }
+            }
             return LoadedModel(whisper: whisper)
         }
         preparing = task
@@ -127,7 +145,18 @@ public actor TranscriptionEngine {
         defer { whisper.segmentDiscoveryCallback = nil }
 
         let language = await chooseLanguage(whisper, samples: samples)
-        let options = Self.options(language: language, strict: false)
+
+        if let european, let language, EngineCatalog.usesEuropeanModel(for: language),
+           let segments = try? await european.transcribe(samples: samples) {
+            try Task.checkCancellation()
+            let corrected = Self.applyVocabulary(segments, vocabulary)
+            onSegments(corrected)
+            return Output(segments: corrected, language: language,
+                          languageWeights: [language: corrected.reduce(0) { $0 + $1.text.count }])
+        }
+
+        var options = Self.options(language: language, strict: false)
+        options.promptTokens = vocabularyPrompt(whisper)
         let results = try await whisper.transcribe(audioArray: samples, decodeOptions: options)
         try Task.checkCancellation()
 
@@ -136,6 +165,7 @@ public actor TranscriptionEngine {
             .map(Self.raw)
             .sorted { $0.start < $1.start }
         segments = try await repairLoops(segments, samples: samples, whisper: whisper, language: language ?? results.first?.language)
+        segments = Self.applyVocabulary(segments, vocabulary)
         let weights = results.reduce(into: [String: Int]()) { $0[language ?? $1.language, default: 0] += $1.text.count }
         return Output(segments: segments, language: Self.dominantLanguage(weights: weights), languageWeights: weights)
     }
@@ -172,7 +202,7 @@ public actor TranscriptionEngine {
     /// voting among supported languages. Short or unclear audio (a quick "mm", noise) often comes
     /// back as some other language; it then reuses the last language this engine settled on.
     private func chooseLanguage(_ whisper: WhisperKit, samples: [Float]) async -> String? {
-        guard !Self.supportedLanguages.isEmpty else { return nil }
+        guard !languages.isEmpty else { return nil }
         let slice = Int(AudioDecoder.sampleRate) * 30
         let starts = samples.count <= slice ? [0] : [0, (samples.count - slice) / 2, samples.count - slice]
         var votes: [String] = []
@@ -180,19 +210,38 @@ public actor TranscriptionEngine {
             let piece = Array(samples[start..<min(samples.count, start + slice)])
             if let detection = try? await whisper.detectLangauge(audioArray: piece) { votes.append(detection.language) }
         }
-        let chosen = Self.vote(votes, fallback: lastLanguage)
+        let chosen = Self.vote(votes, fallback: lastLanguage, supported: languages)
         if let chosen { lastLanguage = chosen }
         return chosen
     }
 
     /// The supported language most samples agreed on; otherwise `fallback`; otherwise the first
     /// supported language in a stable order.
-    static func vote(_ detected: [String], fallback: String?) -> String? {
-        let counts = Dictionary(detected.filter(supportedLanguages.contains).map { ($0, 1) }, uniquingKeysWith: +)
+    static func vote(_ detected: [String], fallback: String?, supported: Set<String> = supportedLanguages) -> String? {
+        guard !supported.isEmpty else { return detected.first ?? fallback }
+        let counts = Dictionary(detected.filter(supported.contains).map { ($0, 1) }, uniquingKeysWith: +)
         if let best = counts.max(by: { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) })?.key {
             return best
         }
-        return fallback ?? supportedLanguages.sorted().first
+        return fallback ?? supported.sorted().first
+    }
+
+    /// The user's names and terms as a decoding prompt, which biases Whisper toward them.
+    private func vocabularyPrompt(_ whisper: WhisperKit) -> [Int]? {
+        guard !vocabulary.isEmpty, let tokenizer = whisper.tokenizer else { return nil }
+        let tokens = tokenizer.encode(text: " " + vocabulary.joined(separator: ", "))
+            .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+        return tokens.isEmpty ? nil : Array(tokens.prefix(120))
+    }
+
+    static func applyVocabulary(_ segments: [RawSegment], _ vocabulary: [String]) -> [RawSegment] {
+        guard !vocabulary.isEmpty else { return segments }
+        return segments.map { segment in
+            var segment = segment
+            segment.text = VocabularyCorrector.correct(segment.text, vocabulary: vocabulary)
+            segment.words = VocabularyCorrector.correct(words: segment.words, vocabulary: vocabulary)
+            return segment
+        }
     }
 
     /// Whisper sometimes gets stuck repeating a syllable or word over real speech, depending on

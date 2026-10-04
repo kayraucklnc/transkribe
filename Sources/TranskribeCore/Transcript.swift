@@ -117,6 +117,8 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var meSpeaker: Int?
     public var summary: AISummary?
     public var chat: AIChat?
+    /// The quality setting the current text was produced with (nil = before qualities existed).
+    public var quality: TranscriptionQuality?
 
     public init(
         id: UUID = UUID(),
@@ -141,7 +143,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, createdAt, duration, language, tracks, segments, status, speakerNames, meSpeaker, summary, chat
+        case id, title, createdAt, duration, language, tracks, segments, status, speakerNames, meSpeaker, summary, chat, quality
     }
 
     public init(from decoder: Decoder) throws {
@@ -158,6 +160,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
         meSpeaker = try container.decodeIfPresent(Int.self, forKey: .meSpeaker)
         summary = try container.decodeIfPresent(AISummary.self, forKey: .summary)
         chat = try container.decodeIfPresent(AIChat.self, forKey: .chat)
+        quality = try container.decodeIfPresent(TranscriptionQuality.self, forKey: .quality)
     }
 
     /// The user's own speaker: their explicit choice, or the microphone track of a Mic + System recording.

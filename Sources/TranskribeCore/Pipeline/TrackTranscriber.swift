@@ -27,7 +27,7 @@ public final class TrackTranscriber: @unchecked Sendable {
     }
 
     private let source: AudioSource
-    private let engine: TranscriptionEngine
+    private let engine: any SpeechEngine
     private let diarization: DiarizationStream?
     private let planner: WindowPlanner
     private let pollInterval: Duration
@@ -38,7 +38,7 @@ public final class TrackTranscriber: @unchecked Sendable {
 
     public init(
         source: AudioSource,
-        engine: TranscriptionEngine,
+        engine: any SpeechEngine,
         diarization: DiarizationStream?,
         planner: WindowPlanner,
         pollInterval: Duration = .seconds(1),
@@ -105,7 +105,8 @@ public final class TrackTranscriber: @unchecked Sendable {
                 }
             }
             languageWeights = TranscriptionEngine.merge(languageWeights, output.languageWeights)
-            let shifted = output.segments.map { Self.shift($0, by: window.start) }
+            let filled = try await fillGaps(in: output.segments, samples: samples)
+            let shifted = filled.map { Self.shift($0, by: window.start) }
             let result = planner.commit(shifted, in: window, previous: committed.last)
             committed += result.segments
             committedUntil = result.committedUntil
@@ -118,6 +119,27 @@ public final class TrackTranscriber: @unchecked Sendable {
         return Result(segments: committed, turns: diarization?.turns() ?? [],
                       language: TranscriptionEngine.dominantLanguage(weights: languageWeights),
                       languageWeights: languageWeights)
+    }
+
+    /// Re-transcribes stretches where the audio has speech but no text came out, so a sentence
+    /// the recognizer skipped isn't lost.
+    private func fillGaps(in segments: [RawSegment], samples: [Float]) async throws -> [RawSegment] {
+        let rate = AudioDecoder.sampleRate
+        let gaps = GapFinder.uncovered(speech: GapFinder.speechRegions(in: samples), segments: segments)
+        guard !gaps.isEmpty else { return segments }
+        var result = segments
+        for gap in gaps.prefix(8) {
+            try Task.checkCancellation()
+            let start = max(0, gap.lowerBound - 0.3), end = min(Double(samples.count) / rate, gap.upperBound + 0.3)
+            let clip = Array(samples[Int(start * rate)..<min(samples.count, Int(end * rate))])
+            guard let redo = try? await engine.transcribe(samples: clip, onSegments: { _ in }) else { continue }
+            let found = redo.segments
+                .map { Self.shift($0, by: start) }
+                .filter { $0.text.split(whereSeparator: \.isWhitespace).count >= 2 && !Hallucinations.isHallucination($0.text) }
+                .filter { candidate in !result.contains { $0.start < candidate.end && candidate.start < $0.end } }
+            result += found
+        }
+        return result.sorted { $0.start < $1.start }
     }
 
     static func shift(_ segment: RawSegment, by offset: TimeInterval) -> RawSegment {
