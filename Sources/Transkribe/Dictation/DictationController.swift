@@ -197,7 +197,6 @@ final class DictationController {
         capture = nil
         workTask?.cancel()
         let speech = DictationAudio.trimmed(samples)
-        saveLastTake(samples)
         guard speech.count >= Self.minimumSamples else {
             end(.nothingHeard)
             return
@@ -349,15 +348,6 @@ final class DictationController {
             throw error
         }
         return chosen
-    }
-
-    /// Keeps the most recent take on this Mac, to check what the microphone heard.
-    private func saveLastTake(_ samples: [Float]) {
-        let url = TranscriptStore.defaultRoot.appendingPathComponent("Dictation/last-take.wav")
-        Task.detached(priority: .utility) {
-            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? DictationAudio.writeWAV(samples, to: url)
-        }
     }
 
     /// A separate model is a lot of memory: let it go after a few quiet minutes.

@@ -21,7 +21,7 @@ import Testing
     }
 
     @Test func settingsRoundTripAndDefaults() throws {
-        let defaults = UserDefaults(suiteName: "transkribe-tests-\(UUID().uuidString)")!
+        let defaults = Fixtures.temporaryDefaults()
         #expect(TranscriptionSettings.load(from: defaults) == .default)
         var settings = TranscriptionSettings.default
         settings.languages = ["tr", "it"]

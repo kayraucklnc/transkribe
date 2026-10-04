@@ -22,10 +22,44 @@ enum Fixtures {
         )
     }
 
+    /// A fresh folder for one test. All of them are deleted when the test run ends.
     static func temporaryDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("TranskribeTests-\(UUID().uuidString)", isDirectory: true)
+        let url = runDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
+
+    /// Throwaway settings for one test, deleted when the test run ends.
+    static func temporaryDefaults() -> UserDefaults {
+        let name = "transkribe-tests-\(UUID().uuidString)"
+        removeAfterRun(defaultsNamed: name)
+        return UserDefaults(suiteName: name)!
+    }
+
+    /// Deletes a settings domain a test created, once the run ends.
+    static func removeAfterRun(defaultsNamed name: String) {
+        _ = runDirectory
+        defaultsLock.withLock { createdDefaults.append(name) }
+    }
+
+    private static let defaultsLock = NSLock()
+    nonisolated(unsafe) private static var createdDefaults: [String] = []
+
+    private static let runDirectory: URL = {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TranskribeTests-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+        atexit {
+            try? FileManager.default.removeItem(at: Fixtures.runDirectory)
+            for name in Fixtures.defaultsLock.withLock({ Fixtures.createdDefaults }) {
+                UserDefaults.standard.removePersistentDomain(forName: name)
+                // Let the preferences daemon finish writing before the file is deleted, or it
+                // puts an empty one back.
+                CFPreferencesAppSynchronize(name as CFString)
+                let plist = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Library/Preferences/\(name).plist")
+                try? FileManager.default.removeItem(at: plist)
+            }
+        }
+        return url
+    }()
 }

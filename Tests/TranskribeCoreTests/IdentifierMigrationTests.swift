@@ -4,8 +4,9 @@ import Testing
 
 @Suite struct IdentifierMigrationTests {
     @Test func copiesSettingsFromTheOldDomainOnce() throws {
-        let old = "test.old.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: "test.new.\(UUID().uuidString)"))
+        let old = "transkribe-tests-\(UUID().uuidString)"
+        Fixtures.removeAfterRun(defaultsNamed: old)
+        let defaults = Fixtures.temporaryDefaults()
         UserDefaults.standard.setPersistentDomain(["transcriptionSettings": Data([1, 2]), "NSWindow Frame main": "x", "recordingSource": "both"], forName: old)
         defer { UserDefaults.standard.removePersistentDomain(forName: old) }
 

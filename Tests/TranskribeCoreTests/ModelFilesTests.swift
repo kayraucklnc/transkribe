@@ -4,7 +4,7 @@ import Testing
 
 @Suite struct ModelFilesTests {
     private func makeModel(skipping missing: String? = nil) throws -> URL {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("model-\(UUID().uuidString)")
+        let folder = try Fixtures.temporaryDirectory()
         for part in ModelFiles.requiredParts {
             let weights = folder.appendingPathComponent("\(part).mlmodelc/weights")
             try FileManager.default.createDirectory(at: weights, withIntermediateDirectories: true)
