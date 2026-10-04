@@ -23,6 +23,11 @@ struct PersonView: View {
                         Text(summaryLine(conversations))
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)
+                        if person.voiceprint != nil {
+                            Label("Recognizes \(firstName)'s voice in new recordings", systemImage: "waveform.badge.checkmark")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.green)
+                        }
                         if !person.emails.isEmpty {
                             HStack(spacing: 12) {
                                 ForEach(person.emails, id: \.self) { email in

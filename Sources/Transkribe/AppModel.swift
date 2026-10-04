@@ -75,6 +75,7 @@ final class AppModel {
     var pendingFollowUp: (transcript: Transcript.ID?, person: Person.ID?)?
     var enhancingID: Transcript.ID?
     let diarizer: DiarizationEngine
+    let voiceprints = VoiceprintEngine()
     var session: (recorder: RecordingSession, transcript: Transcript)?
     /// Transcription that runs alongside the current recording.
     var live: (task: Task<Void, Error>, sources: [LiveAudioSource])?
@@ -111,6 +112,7 @@ final class AppModel {
             preloadModel()
         }
         startEnhancing()
+        backfillVoices()
     }
 
     func finishOnboarding() {
@@ -222,6 +224,7 @@ final class AppModel {
     /// Marks which speaker is the user (-1 = none of them, nil = ask again).
     func setMe(_ speaker: Int?, in id: Transcript.ID) {
         update(id, persist: true) { $0.meSpeaker = speaker }
+        if let speaker, let print = transcript(id)?.speakerVoiceprints[speaker] { learnMyVoice(print) }
     }
 
     /// Moves everything `speaker` said to `target` (e.g. two detected voices are one person).
@@ -233,8 +236,10 @@ final class AppModel {
                 return segment
             }
             transcript.speakerNames[speaker] = nil
+            transcript.speakerPeople[speaker] = nil
         }
         showToast("Speakers merged")
+        Task(priority: .utility) { await learnVoices(of: id, recognize: false) }
     }
 
     /// Reassigns specific segments, e.g. one paragraph that was attributed to the wrong person.

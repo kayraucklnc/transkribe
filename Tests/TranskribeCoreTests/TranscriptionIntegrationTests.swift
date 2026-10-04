@@ -137,6 +137,31 @@ struct TranscriptionIntegrationTests {
         #expect(speakerOf("sharing my screen") != speakerOf("sitting next to"))
     }
 
+    /// The same voice saying different things scores high; different voices score low.
+    @Test func voiceprintsRecognizeTheSameVoice() async throws {
+        let engine = VoiceprintEngine()
+        func print(_ voice: String, _ text: String) async throws -> [Float] {
+            let samples = try await AudioDecoder.decode(url: try speak(text, voice: voice))
+            return try #require(try await engine.voiceprint(clips: [samples]))
+        }
+        let first = "The quarterly numbers look good, and the new customers in Germany are growing faster than expected."
+        let second = "Can you send me the contract tomorrow morning, so I can review it before the meeting with the lawyers?"
+        var prints: [String: ([Float], [Float])] = [:]
+        for voice in ["Daniel", "Samantha", "Yelda"] {
+            prints[voice] = (try await print(voice, first), try await print(voice, second))
+        }
+        for (voice, pair) in prints {
+            let same = Voiceprint.similarity(pair.0, pair.1)
+            Swift.print("SAME \(voice): \(same)")
+            #expect(same >= VoiceMatcher.threshold)
+            for (other, otherPair) in prints where other > voice {
+                let different = Voiceprint.similarity(pair.0, otherPair.1)
+                Swift.print("DIFF \(voice)-\(other): \(different)")
+                #expect(different < VoiceMatcher.threshold)
+            }
+        }
+    }
+
     /// A voice note on the mic alone is just "Me".
     @Test func microphoneAloneWithOneVoiceIsMe() async throws {
         let samples = try await AudioDecoder.decode(url: try speak(

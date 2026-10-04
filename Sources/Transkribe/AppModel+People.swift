@@ -9,7 +9,7 @@ extension AppModel {
         people = (try? peopleStore.load()) ?? []
     }
 
-    private func savePeople() {
+    func savePeople() {
         do { try peopleStore.save(people) } catch { show(error) }
     }
 
@@ -51,7 +51,8 @@ extension AppModel {
             $0.speakerPeople[speaker] = person.id
             $0.speakerNames[speaker] = person.name
         }
-        showToast("Linked to \(person.name)")
+        if let print = transcript(id)?.speakerVoiceprints[speaker] { learnVoice(print, of: person.id) }
+        showToast("Linked to \(person.name) · Transkribe will recognize their voice")
     }
 
     func unlink(speaker: Int, in id: Transcript.ID) {

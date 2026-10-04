@@ -7,6 +7,10 @@ public struct Person: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var emails: [String]
     /// `CNContact.identifier` when linked to the user's Contacts.
     public var contactIdentifier: String?
+    /// What their voice sounds like, learned from conversations they were linked in.
+    public var voiceprint: [Float]?
+    /// How many recordings `voiceprint` was learned from.
+    public var voiceSamples: Int?
 
     public init(id: UUID = UUID(), name: String, emails: [String] = [], contactIdentifier: String? = nil) {
         self.id = id

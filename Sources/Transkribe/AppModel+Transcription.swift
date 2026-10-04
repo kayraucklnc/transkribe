@@ -30,8 +30,13 @@ extension AppModel {
                 update(id, persist: true) {
                     $0.segments = segments
                     $0.speakerNames = $0.speakerNames.filter { $0.key == SpeakerID.me }
+                    // Numbers changed, so links to people no longer point at the right voices.
+                    $0.speakerPeople = $0.speakerPeople.filter { $0.key == SpeakerID.me }
+                    $0.speakerVoiceprints = [:]
                     if $0.meSpeaker != SpeakerID.me { $0.meSpeaker = nil }
                 }
+                // Known people are found again by their voice.
+                await learnVoices(of: id, recognize: true)
             } catch {
                 show(message: "Couldn't identify speakers. \(error.localizedDescription)")
             }
@@ -161,6 +166,8 @@ extension AppModel {
         }
         store.clearCheckpoints(for: current)
         if showsProgress, pendingFollowUp != nil, isLive || liveRecordingID == nil { applyPendingFollowUp(to: id) }
+        // Learn who sounds like whom, and recognize people the app already knows.
+        Task(priority: .utility) { await learnVoices(of: id, recognize: showsProgress) }
     }
 
     private func pipelineDidUpdate(id: Transcript.ID, track: AudioTrack, index: Int, update progressUpdate: TrackTranscriber.Progress,
