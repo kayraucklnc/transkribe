@@ -121,7 +121,7 @@ import Testing
             Segment(start: 1, end: 2, text: "b", speaker: 2),
         ])
         #expect(transcript.name(of: SpeakerID.me) == "Me")
-        #expect(transcript.name(of: 2) == "Speaker 2")
+        #expect(transcript.name(of: 2) == "Speaker 1") // the first voice besides "Me"
         transcript.speakerNames[2] = "Ayşe"
         #expect(transcript.name(of: 2) == "Ayşe")
         #expect(transcript.speakers == [0, 2])

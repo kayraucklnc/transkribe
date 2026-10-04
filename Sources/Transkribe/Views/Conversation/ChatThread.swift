@@ -9,11 +9,12 @@ struct ChatThread: View {
     @State private var flashID: Paragraph.ID?
 
     /// Speakers whose side is certain. While a transcript is still being worked on, detected
-    /// speakers can still change, so their lines wait in the middle; only the microphone
-    /// ("Me" in a Mic + System recording) is known from the start.
+    /// speakers can still change, so their lines wait in the middle; only "Me" in a Mic + System
+    /// recording (the main voice on the microphone) is known from the start.
     private var settledSpeakers: Set<Int>? {
         guard transcript.status != .done else { return nil }
-        return transcript.tracks.contains { $0.source == .microphone } ? [SpeakerID.me] : []
+        let withCall = transcript.tracks.contains { $0.source == .microphone } && transcript.tracks.contains { $0.source == .system }
+        return withCall ? [SpeakerID.me] : []
     }
 
     var body: some View {

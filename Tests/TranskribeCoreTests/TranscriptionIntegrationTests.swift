@@ -107,6 +107,46 @@ struct TranscriptionIntegrationTests {
         #expect(speakerOf("customer visit") != speakerOf("dashboard"))
     }
 
+    /// Two people at one Mac during a call: the main voice is "Me", the colleague gets their own label.
+    @Test func microphoneKeepsSomeoneElseInTheRoomApart() async throws {
+        let lines: [(String, String)] = [
+            ("Daniel", "Okay, I'm sharing my screen now, can everyone see the quarterly numbers on the first slide?"),
+            ("Samantha", "I'm sitting next to Daniel. The revenue line includes the two new enterprise customers from Germany."),
+            ("Daniel", "Right, and the churn went down to two percent after we changed the onboarding flow in July."),
+            ("Samantha", "We should also mention that support tickets dropped by almost a third since the redesign shipped."),
+            ("Daniel", "Good point. Next slide shows the hiring plan, we want three engineers and one designer by December."),
+            ("Samantha", "The designer role is the most urgent one, because the mobile app redesign starts in November."),
+            ("Daniel", "Let's take questions now, and then we can go through the budget in more detail afterwards."),
+            ("Samantha", "And I can send everyone the full spreadsheet after the call, including the regional breakdown."),
+            ("Daniel", "Perfect, thank you. Who wants to start with a question about the numbers or the plan?"),
+        ]
+        var samples: [Float] = []
+        for (voice, text) in lines {
+            samples += try await AudioDecoder.decode(url: try speak(text, voice: voice))
+            samples += [Float](repeating: 0, count: 8_000)
+        }
+        let output = try await Self.engine.transcribe(samples: samples)
+        let turns = try await Self.diarizer.turns(samples: samples)
+        let labeled = MicSpeakers.labelWithCall(output.segments, turns: turns)
+        print("MIC:", labeled.map { "[\($0.speaker ?? -1)] \($0.text)" }.joined(separator: "\n"))
+
+        let speakerOf = { (needle: String) in labeled.first { TranscriptSearch.normalize($0.text).contains(needle) }?.speaker }
+        #expect(Set(labeled.compactMap(\.speaker)) == [SpeakerID.me, SpeakerID.firstInRoom])
+        #expect(speakerOf("sharing my screen") == speakerOf("hiring plan"))
+        #expect(speakerOf("sitting next to") == speakerOf("spreadsheet"))
+        #expect(speakerOf("sharing my screen") != speakerOf("sitting next to"))
+    }
+
+    /// A voice note on the mic alone is just "Me".
+    @Test func microphoneAloneWithOneVoiceIsMe() async throws {
+        let samples = try await AudioDecoder.decode(url: try speak(
+            "Reminder for tomorrow: call the accountant about the invoice, then book the flights to Milan for the conference.",
+            voice: "Daniel"))
+        let output = try await Self.engine.transcribe(samples: samples)
+        let turns = try await Self.diarizer.turns(samples: samples)
+        #expect(MicSpeakers.labelAlone(output.segments, turns: turns).allSatisfy { $0.speaker == SpeakerID.me })
+    }
+
     @Test func honorsRequestedSpeakerCount() async throws {
         var samples: [Float] = []
         for (voice, text) in [("Samantha", "Let's review the plan for the launch next week."),

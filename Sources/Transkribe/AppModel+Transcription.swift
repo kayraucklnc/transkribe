@@ -109,7 +109,8 @@ extension AppModel {
         let results = try await withThrowingTaskGroup(of: (Int, TrackTranscriber.Result).self) { group in
             for (index, (track, source)) in sources.enumerated() {
                 let checkpoint = isLive || !showsProgress ? nil : store.loadCheckpoint(for: transcript, track: track)
-                let diarization = track.source == .microphone ? nil : try? await diarizer.makeStream()
+                // Every track, the microphone included: more than one person can be in the room.
+                let diarization = try? await diarizer.makeStream()
                 let transcriber = TrackTranscriber(source: source, engine: engine, diarization: diarization, planner: planner,
                                                    shouldPause: { ResourceGovernor.currentPauseReason() })
                 // Background priority: the user's apps always come first.
@@ -132,7 +133,10 @@ extension AppModel {
 
         guard let current = self.transcript(id) else { return }
         let offsets = sources.map { pair in current.tracks.first { $0.fileName == pair.0.fileName }?.offset ?? pair.0.offset }
-        var labeled = sources.indices.map { Self.label(results[$0]!.segments, track: sources[$0].0, turns: results[$0]!.turns) }
+        let withCall = sources.contains { $0.0.source == .system }
+        var labeled = sources.indices.map {
+            Self.label(results[$0]!.segments, track: sources[$0].0, turns: results[$0]!.turns, withCall: withCall)
+        }
         if let mic = sources.firstIndex(where: { $0.0.source == .microphone }),
            let system = sources.firstIndex(where: { $0.0.source == .system }) {
             labeled[mic] = await removeSpeakerBleed(mic: labeled[mic], micSource: sources[mic].1, micOffset: offsets[mic],
@@ -162,7 +166,8 @@ extension AppModel {
     private func pipelineDidUpdate(id: Transcript.ID, track: AudioTrack, index: Int, update progressUpdate: TrackTranscriber.Progress,
                                    progress: PipelineProgress, isLive: Bool) {
         guard let transcript = self.transcript(id) else { return }
-        let labeled = Self.label(progressUpdate.committed + progressUpdate.pending, track: track, turns: progressUpdate.turns)
+        let labeled = Self.label(progressUpdate.committed + progressUpdate.pending, track: track, turns: progressUpdate.turns,
+                                 withCall: transcript.tracks.contains { $0.source == .system })
         progress.tracks[index] = TrackMerger.Track(source: track.source, offset: track.offset, segments: labeled)
         // Count text still being decoded too: a whole file can be a single window, and progress
         // must move while it's being worked on, not jump from 0 to 100.
@@ -206,17 +211,19 @@ extension AppModel {
         return kept
     }
 
-    /// The microphone in a Mic + System recording is always "Me"; other tracks use speaker detection.
-    static func label(_ segments: [RawSegment], track: AudioTrack, turns: [SpeakerTurn]) -> [RawSegment] {
-        if track.source == .microphone {
-            return segments.map { var segment = $0; segment.speaker = SpeakerID.me; return segment }
-        }
-        return SpeakerAssigner.assign(segments, turns: turns)
+    /// On the microphone, the main voice is "Me" and anyone else in the room keeps their own
+    /// label; the call side and imported files use speaker detection as is.
+    static func label(_ segments: [RawSegment], track: AudioTrack, turns: [SpeakerTurn], withCall: Bool) -> [RawSegment] {
+        guard track.source == .microphone else { return SpeakerAssigner.assign(segments, turns: turns) }
+        return withCall ? MicSpeakers.labelWithCall(segments, turns: turns) : MicSpeakers.labelAlone(segments, turns: turns)
     }
 
     private func relabelSpeakers(in transcript: Transcript, speakerCount: Int?) async throws -> [Segment] {
         var turns: [SpeakerTurn] = []
-        for track in transcript.tracks where track.source != .microphone {
+        let withCall = transcript.tracks.contains { $0.source == .system }
+        // With a call, the count applies to the call side; the mic's voices stay as they are.
+        // A mic-only recording is an in-person conversation: its voices are what's being counted.
+        for track in transcript.tracks where !(withCall && track.source == .microphone) {
             let source = FileAudioSource(url: store.audioURL(for: transcript, track: track))
             let stream = try await diarizer.makeStream()
             let duration = try await source.availableDuration()
@@ -229,7 +236,7 @@ extension AppModel {
             }
         }
         guard !turns.isEmpty else { return transcript.segments }
-        let mine = transcript.segments.filter { $0.speaker == SpeakerID.me && transcript.tracks.contains { $0.source == .microphone } }
+        let mine = withCall ? transcript.segments.filter { SpeakerID.isOnMicrophone($0.speaker) } : []
         let others = transcript.segments
             .filter { !mine.contains($0) }
             .map { RawSegment(start: $0.start, end: $0.end, text: $0.text, words: $0.words) }

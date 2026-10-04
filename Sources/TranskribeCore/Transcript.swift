@@ -10,6 +10,13 @@ public enum TrackSource: String, Codable, Sendable {
 /// voices found by speaker detection are numbered from 1.
 public enum SpeakerID {
     public static let me = 0
+    /// Other people heard on the microphone of a Mic + System recording (someone in the room
+    /// with you) are numbered from here, so they never collide with voices from the call.
+    public static let firstInRoom = 100
+
+    public static func isOnMicrophone(_ speaker: Int?) -> Bool {
+        speaker.map { $0 == me || $0 >= firstInRoom } ?? false
+    }
 }
 
 public struct Word: Codable, Equatable, Hashable, Sendable {
@@ -193,8 +200,10 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     public func name(of speaker: Int) -> String {
         if let name = speakerNames[speaker], !name.isEmpty { return name }
-        if speaker == meSpeaker { return "Me" }
-        return speaker == SpeakerID.me ? "Me" : "Speaker \(speaker)"
+        if speaker == meSpeaker || speaker == SpeakerID.me { return "Me" }
+        // Count people, not internal numbers: "Speaker 2" is the second voice that appears.
+        let others = speakers.filter { $0 != SpeakerID.me }
+        return "Speaker \((others.firstIndex(of: speaker) ?? others.count) + 1)"
     }
 
     public var preview: String {
