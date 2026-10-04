@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Builds build/Transkribe.app (release, ad-hoc signed).
+# Builds build/Transkribe.app (release).
 # Usage: scripts/build-app.sh [--install]   (--install copies it to /Applications)
+# Signing: ad-hoc by default. Set DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" to sign
+# for distribution (hardened runtime, as notarization requires).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,8 +33,15 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 
-echo "→ Signing (ad-hoc)"
-codesign --force --deep --sign - --identifier kayrauckilinc.dev.transkribe "$APP"
+if [[ -n "${DEVELOPER_ID:-}" ]]; then
+  echo "→ Signing with $DEVELOPER_ID"
+  codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP/Contents/MacOS/transkribe-mcp"
+  codesign --force --options runtime --timestamp --entitlements Resources/Transkribe.entitlements \
+    --sign "$DEVELOPER_ID" --identifier kayrauckilinc.dev.transkribe "$APP"
+else
+  echo "→ Signing (ad-hoc)"
+  codesign --force --deep --sign - --identifier kayrauckilinc.dev.transkribe "$APP"
+fi
 
 if [[ "${1:-}" == "--install" ]]; then
   rm -rf /Applications/Transkribe.app

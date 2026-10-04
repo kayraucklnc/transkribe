@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Builds build/Transkribe.dmg: the app, an Applications shortcut, and a designed window.
 # Usage: scripts/make-dmg.sh   (builds the app first)
+# For a DMG that opens without warnings on any Mac, set both:
+#   DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
+#   NOTARY_PROFILE=<name>   (once: xcrun notarytool store-credentials <name> --apple-id … --team-id …)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -46,5 +49,14 @@ PY
 echo "→ Building DMG"
 rm -f "$BUILD/Transkribe.dmg"
 "$VENV/bin/dmgbuild" -s "$SETTINGS" "Transkribe $VERSION" "$BUILD/Transkribe.dmg"
-codesign --force --sign - "$BUILD/Transkribe.dmg"
+if [[ -n "${DEVELOPER_ID:-}" ]]; then
+  codesign --force --timestamp --sign "$DEVELOPER_ID" "$BUILD/Transkribe.dmg"
+  if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+    echo "→ Notarizing (a few minutes)"
+    xcrun notarytool submit "$BUILD/Transkribe.dmg" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$BUILD/Transkribe.dmg"
+  fi
+else
+  codesign --force --sign - "$BUILD/Transkribe.dmg"
+fi
 echo "✓ Built $BUILD/Transkribe.dmg ($(du -h "$BUILD/Transkribe.dmg" | cut -f1))"
