@@ -397,7 +397,7 @@ private struct ChatMessageView: View {
     }
 }
 
-private struct AssistantBubble<Content: View>: View {
+struct AssistantBubble<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -417,7 +417,7 @@ private struct AssistantBubble<Content: View>: View {
     }
 }
 
-private struct ThinkingDots: View {
+struct ThinkingDots: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(0..<3) { index in
@@ -433,16 +433,17 @@ private struct ThinkingDots: View {
     }
 }
 
-private struct Composer: View {
+struct Composer: View {
     @Binding var question: String
     var focused: FocusState<Bool>.Binding
     let isAnswering: Bool
     let onSend: () -> Void
     let onStop: () -> Void
+    var placeholder = "Ask about this conversation…"
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField("Ask about this conversation…", text: $question, axis: .vertical)
+            TextField(placeholder, text: $question, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...4)
                 .focused(focused)
@@ -550,7 +551,7 @@ private struct Working: View {
     }
 }
 
-private struct ErrorCard: View {
+struct ErrorCard: View {
     let message: String
     let onRetry: () -> Void
 

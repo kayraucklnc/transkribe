@@ -5,7 +5,8 @@ let package = Package(
     name: "Transkribe",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "Transkribe", targets: ["Transkribe"])
+        .executable(name: "Transkribe", targets: ["Transkribe"]),
+        .executable(name: "transkribe-mcp", targets: ["TranskribeMCP"]),
     ],
     dependencies: [
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "1.1.0"),
@@ -22,6 +23,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "Transkribe",
+            dependencies: ["TranskribeCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .executableTarget(
+            name: "TranskribeMCP",
             dependencies: ["TranskribeCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),

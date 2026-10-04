@@ -122,3 +122,24 @@ import Testing
         #expect(Prompts.summarySystem(for: transcript, compact: false).contains("## Key points"))
     }
 }
+
+@Suite struct OpenLinkTests {
+    @Test func parsesConversationAndTime() throws {
+        let id = UUID()
+        let target = try #require(AIModel.openTarget(from: URL(string: "transkribe://open/\(id.uuidString)?t=312")!))
+        #expect(target.id == id)
+        #expect(target.time == 312)
+    }
+
+    @Test func timeIsOptional() throws {
+        let id = UUID()
+        let target = try #require(AIModel.openTarget(from: URL(string: "transkribe://open/\(id.uuidString)")!))
+        #expect(target.time == nil)
+    }
+
+    @Test func rejectsOtherLinks() {
+        #expect(AIModel.openTarget(from: URL(string: "transkribe://seek/12")!) == nil)
+        #expect(AIModel.openTarget(from: URL(string: "transkribe://open/not-a-uuid")!) == nil)
+        #expect(AIModel.openTarget(from: URL(string: "https://example.com/open/x")!) == nil)
+    }
+}

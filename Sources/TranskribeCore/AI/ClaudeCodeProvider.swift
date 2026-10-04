@@ -58,6 +58,40 @@ public struct ClaudeCodeProvider: AIProvider {
         }
     }
 
+    /// Runs Claude with the conversation tools of an MCP server, reporting tool calls as they
+    /// happen. Text written before a tool call is withdrawn (`.resetText`); only the final answer stays.
+    public func agent(model: AIModel, system: String, messages: [AIMessage], mcpServer: URL) -> AsyncThrowingStream<AgentEvent, Error> {
+        let explicit = executableURL
+        let run = ClaudeCodeRun()
+        return AsyncThrowingStream { continuation in
+            let task = Task.detached {
+                let config = FileManager.default.temporaryDirectory.appendingPathComponent("transkribe-mcp-\(UUID().uuidString).json")
+                defer { try? FileManager.default.removeItem(at: config) }
+                do {
+                    guard let executable = explicit ?? Self.locateExecutable() else { throw AIError(Self.notInstalledReason) }
+                    let servers = ["mcpServers": ["transkribe": ["type": "stdio", "command": mcpServer.path, "args": [String]()]]]
+                    try JSONSerialization.data(withJSONObject: servers).write(to: config)
+                    let allowed = MCPServer.tools.compactMap { $0["name"] as? String }.map { "mcp__transkribe__\($0)" }
+                    let input = Data(ConversationRenderer.prompt(from: messages).utf8)
+                    try await run.run(executable: executable, model: model.id, system: system, input: input,
+                                      extraArguments: ["--mcp-config", config.path, "--allowedTools", allowed.joined(separator: ",")],
+                                      onTool: { name, input in
+                                          continuation.yield(.resetText)
+                                          continuation.yield(.toolCall(name: name.replacingOccurrences(of: "mcp__transkribe__", with: ""), input: input))
+                                      },
+                                      onDelta: { continuation.yield(.text($0)) })
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+                run.terminate()
+            }
+        }
+    }
+
     // MARK: - Process setup
 
     static func arguments(model: String, system: SystemPromptArgument) -> [String] {
@@ -137,6 +171,8 @@ public struct ClaudeCodeProvider: AIProvider {
 public enum ClaudeCodeStreamParser {
     public enum Event: Equatable, Sendable {
         case textDelta(String)
+        /// The model called a tool (MCP tools appear as `mcp__server__tool`).
+        case toolUse(name: String, input: String)
         /// The final line. `text` is the full reply on success, the error message on failure.
         case result(text: String?, isError: Bool)
     }
@@ -153,6 +189,13 @@ public enum ClaudeCodeStreamParser {
                   delta["type"] as? String == "text_delta",
                   let text = delta["text"] as? String else { return nil }
             return .textDelta(text)
+        case "assistant":
+            guard let message = object["message"] as? [String: Any],
+                  let content = message["content"] as? [[String: Any]],
+                  let call = content.first(where: { $0["type"] as? String == "tool_use" }),
+                  let name = call["name"] as? String else { return nil }
+            let input = (call["input"]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }.map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+            return .toolUse(name: name, input: input)
         case "result":
             let isError = object["is_error"] as? Bool ?? false
             var text = object["result"] as? String
@@ -185,7 +228,8 @@ final class ClaudeCodeRun: @unchecked Sendable {
         return cancelled
     }
 
-    func run(executable: URL, model: String, system: String, input: Data, onDelta: (String) -> Void) async throws {
+    func run(executable: URL, model: String, system: String, input: Data, extraArguments: [String] = [],
+             onTool: (String, String) -> Void = { _, _ in }, onDelta: (String) -> Void) async throws {
         var systemFile: URL?
         defer { systemFile.map { try? FileManager.default.removeItem(at: $0) } }
         let systemArgument: ClaudeCodeProvider.SystemPromptArgument
@@ -201,7 +245,7 @@ final class ClaudeCodeRun: @unchecked Sendable {
         let process = Process()
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
         process.executableURL = executable
-        process.arguments = ClaudeCodeProvider.arguments(model: model, system: systemArgument)
+        process.arguments = ClaudeCodeProvider.arguments(model: model, system: systemArgument) + extraArguments
         process.environment = ClaudeCodeProvider.environment(from: ProcessInfo.processInfo.environment, executable: executable)
         // Keep the CLI away from any project's CLAUDE.md.
         process.currentDirectoryURL = FileManager.default.temporaryDirectory
@@ -230,6 +274,8 @@ final class ClaudeCodeRun: @unchecked Sendable {
                 case .textDelta(let text):
                     sawDelta = true
                     onDelta(text)
+                case .toolUse(let name, let input):
+                    onTool(name, input)
                 case .result(let text, let isError):
                     if isError { errorMessage = text ?? "Unknown error" } else { finalText = text }
                 case nil:

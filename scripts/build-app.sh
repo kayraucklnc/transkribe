@@ -9,12 +9,15 @@ cd "$ROOT"
 
 echo "→ Compiling (release)…"
 swift build -c release --product Transkribe
+swift build -c release --product transkribe-mcp
 BIN="$(swift build -c release --show-bin-path)/Transkribe"
+MCP="$(swift build -c release --show-bin-path)/transkribe-mcp"
 
 echo "→ Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Transkribe"
+cp "$MCP" "$APP/Contents/MacOS/transkribe-mcp"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 echo "→ Rendering icon"

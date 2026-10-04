@@ -19,6 +19,9 @@ final class AIService {
     }
     private(set) var summaryDrafts: [Transcript.ID: Draft] = [:]
     private(set) var answerDrafts: [Transcript.ID: Draft] = [:]
+    /// The conversation with the whole library (not saved).
+    var libraryExchanges: [LibraryExchange] = []
+    var libraryTask: Task<Void, Never>?
 
     let providers: [any AIProvider]
     private weak var model: AppModel?

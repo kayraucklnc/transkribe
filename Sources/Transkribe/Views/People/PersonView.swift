@@ -8,6 +8,9 @@ struct PersonView: View {
     @State private var isEditing = false
     @State private var name = ""
     @State private var emails = ""
+    @State private var isAsking = false
+    @State private var askQuestion = ""
+    @Environment(AIService.self) private var ai
 
     var body: some View {
         let conversations = model.conversations(with: person.id)
@@ -46,6 +49,20 @@ struct PersonView: View {
                         }
                         .buttonStyle(.plain)
                         .help("Record a conversation with \(person.name); it joins your ongoing conversation")
+                        if !conversations.isEmpty {
+                            Button {
+                                ai.clearLibraryChat()
+                                isAsking = true
+                            } label: {
+                                Label("Ask about \(person.name.split(separator: " ").first.map(String.init) ?? person.name)", systemImage: "sparkles")
+                                    .font(.callout.weight(.medium))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .glassBackground(in: Capsule(), interactive: true)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Ask questions about everything you've talked about with \(person.name)")
+                        }
                         Button("Edit") {
                             name = person.name
                             emails = person.emails.joined(separator: ", ")
@@ -85,6 +102,9 @@ struct PersonView: View {
             }
         }
         .onExitCommand { withAnimation(Theme.spring) { model.selectedPerson = nil } }
+        .sheet(isPresented: $isAsking) {
+            LibraryChatView(focus: person, question: $askQuestion)
+        }
         .sheet(isPresented: $isEditing) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Edit person").font(.headline)

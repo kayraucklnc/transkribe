@@ -19,8 +19,8 @@ public struct AnthropicAPIProvider: AIProvider {
     public let kind = AIProviderKind.anthropicAPI
     public var models: [AIModel] { [Self.opus, Self.sonnet, Self.haiku] }
 
-    private let apiKey: @Sendable () -> String?
-    private let session: URLSession
+    let apiKey: @Sendable () -> String?
+    let session: URLSession
 
     /// - Parameter apiKey: supplies the key; reads it from the keychain when nil.
     public init(session: URLSession = .shared, apiKey: (@Sendable () -> String?)? = nil) {

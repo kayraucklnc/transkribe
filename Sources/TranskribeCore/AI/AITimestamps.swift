@@ -52,6 +52,13 @@ extension AIModel {
         return result
     }
 
+    /// `transkribe://open/<conversation id>?t=<seconds>` links in library answers.
+    public static func openTarget(from url: URL) -> (id: UUID, time: TimeInterval?)? {
+        guard url.scheme == seekScheme, url.host == "open", let id = UUID(uuidString: url.lastPathComponent) else { return nil }
+        let time = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "t" }?.value.flatMap(Double.init)
+        return (id, time)
+    }
+
     public static func seekTime(from url: URL) -> TimeInterval? {
         guard url.scheme == seekScheme, url.host == "seek", let value = Double(url.lastPathComponent) else { return nil }
         return value

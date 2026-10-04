@@ -5,12 +5,18 @@ import TranskribeCore
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
     @FocusState private var searchFocused: Bool
+    @State private var isAsking = false
+    @State private var askQuestion = ""
 
     var body: some View {
         @Bindable var model = model
         ScrollView {
             VStack(alignment: .leading, spacing: 44) {
                 Welcome()
+                if !model.transcripts.isEmpty {
+                    LibraryAskBar(isPresented: $isAsking, question: $askQuestion)
+                        .frame(maxWidth: 640)
+                }
                 if !model.people.isEmpty, model.query.isEmpty {
                     PeopleStrip()
                 }
@@ -65,6 +71,9 @@ struct LibraryView: View {
             .frame(maxWidth: .infinity)
         }
         .background(AmbientBackground())
+        .sheet(isPresented: $isAsking) {
+            LibraryChatView(question: $askQuestion)
+        }
         .background {
             Button("") { searchFocused = true }
                 .keyboardShortcut("f")

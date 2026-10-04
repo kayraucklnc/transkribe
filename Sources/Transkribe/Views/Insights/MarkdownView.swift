@@ -7,6 +7,9 @@ struct MarkdownView: View {
     let markdown: String
     var fontSize: CGFloat = 13.5
     @Environment(PlayerController.self) private var player
+    @Environment(AppModel.self) private var model
+    /// Called after a link opened a conversation (e.g. to close a sheet).
+    var onOpen: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -16,6 +19,12 @@ struct MarkdownView: View {
         }
         .textSelection(.enabled)
         .environment(\.openURL, OpenURLAction { url in
+            if let target = AIModel.openTarget(from: url) {
+                model.selectedPerson = nil
+                model.open(target.id, at: target.time)
+                onOpen()
+                return .handled
+            }
             guard let seconds = AIModel.seekTime(from: url) else { return .systemAction }
             player.play(from: seconds)
             return .handled
