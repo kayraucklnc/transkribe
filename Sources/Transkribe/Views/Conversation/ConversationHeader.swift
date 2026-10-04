@@ -7,15 +7,35 @@ struct ConversationHeader: View {
     let isLive: Bool
     @Environment(AppModel.self) private var model
     @State private var title = ""
+    @State private var isEditingTitle = false
+    @FocusState private var titleFocused: Bool
 
     var body: some View {
         VStack(spacing: 14) {
-            TextField("Untitled", text: $title, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 26, weight: .bold))
-                .lineLimit(1...2)
-                .multilineTextAlignment(.center)
-                .onSubmit { model.rename(transcript.id, to: title) }
+            // A plain Text that turns into a single-line field on click. (A multi-line TextField
+            // inside the scroll view feeds back into layout and can freeze the window.)
+            Group {
+                if isEditingTitle {
+                    TextField("Untitled", text: $title)
+                        .textFieldStyle(.plain)
+                        .multilineTextAlignment(.center)
+                        .focused($titleFocused)
+                        .onSubmit(commitTitle)
+                        .onExitCommand { isEditingTitle = false; title = transcript.title }
+                        .onChange(of: titleFocused) { _, focused in if !focused { commitTitle() } }
+                } else {
+                    Text(transcript.title)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .onTapGesture {
+                            title = transcript.title
+                            isEditingTitle = true
+                            titleFocused = true
+                        }
+                        .help("Click to rename")
+                }
+            }
+            .font(.system(size: 26, weight: .bold))
             Text(meta)
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -33,8 +53,12 @@ struct ConversationHeader: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .onAppear { title = transcript.title }
-        .onChange(of: transcript.title) { _, newValue in title = newValue }
+    }
+
+    private func commitTitle() {
+        guard isEditingTitle else { return }
+        model.rename(transcript.id, to: title)
+        isEditingTitle = false
     }
 
     private var meta: String {

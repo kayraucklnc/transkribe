@@ -11,6 +11,9 @@ struct ChatThread: View {
         let paragraphs = ParagraphBuilder.paragraphs(from: transcript.segments)
         let me = transcript.resolvedMeSpeaker
         let items = ChatLayout.items(for: paragraphs, me: me)
+        let starts = items.compactMap { item -> (start: TimeInterval, id: Paragraph.ID)? in
+            if case .bubble(let bubble) = item { (bubble.paragraph.start, bubble.id) } else { nil }
+        }
         let names = Dictionary(uniqueKeysWithValues: transcript.speakers.map { ($0, transcript.name(of: $0)) })
         ScrollViewReader { proxy in
             ScrollView {
@@ -22,7 +25,7 @@ struct ChatThread: View {
                             .padding(.bottom, 18)
                     }
                     ThreadStatus(transcript: transcript, isLive: isLive)
-                    BubbleList(transcriptID: transcript.id, items: items, names: names,
+                    BubbleList(transcriptID: transcript.id, items: items, starts: starts, names: names,
                                labelsSpeakers: transcript.hasSpeakers, query: model.query, scroll: proxy)
                     if isLive {
                         TypingIndicator()
@@ -49,6 +52,8 @@ struct ChatThread: View {
 private struct BubbleList: View {
     let transcriptID: Transcript.ID
     let items: [ChatLayout.Item]
+    /// Bubble start times in order, for finding the one being played without walking `items`.
+    let starts: [(start: TimeInterval, id: Paragraph.ID)]
     let names: [Int: String]
     let labelsSpeakers: Bool
     let query: String
@@ -89,15 +94,12 @@ private struct BubbleList: View {
     private var currentBubble: Paragraph.ID? {
         guard player.isPlaying || player.currentTime > 0 else { return nil }
         let time = player.currentTime + 0.05
-        let bubbles = items.compactMap { item -> ChatLayout.Bubble? in
-            if case .bubble(let bubble) = item { bubble } else { nil }
-        }
-        var low = 0, high = bubbles.count
+        var low = 0, high = starts.count
         while low < high {
             let mid = (low + high) / 2
-            if bubbles[mid].paragraph.start <= time { low = mid + 1 } else { high = mid }
+            if starts[mid].start <= time { low = mid + 1 } else { high = mid }
         }
-        return low > 0 ? bubbles[low - 1].id : nil
+        return low > 0 ? starts[low - 1].id : nil
     }
 }
 

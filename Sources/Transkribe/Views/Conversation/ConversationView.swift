@@ -42,6 +42,7 @@ struct ConversationView: View {
         .task(id: transcript.id) {
             guard !isLive else { return }
             await player.load(transcript, store: model.store)
+
         }
         .onChange(of: isLive) { _, live in
             guard !live else { return }
@@ -54,6 +55,7 @@ struct ConversationView: View {
             return .handled
         }
         .onExitCommand { withAnimation(Theme.spring) { model.selection = nil } }
+        .onDisappear { player.stop() }
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {

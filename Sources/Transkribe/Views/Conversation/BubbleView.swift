@@ -49,7 +49,7 @@ struct BubbleView: View, Equatable {
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .padding(.top, bubble.isFirstInGroup ? 10 : 2)
-        .onHover { hovering in withAnimation(.easeOut(duration: 0.15)) { isHovered = hovering } }
+        .onHover { isHovered = $0 }
         .contextMenu { menu }
     }
 
@@ -79,10 +79,10 @@ struct BubbleView: View, Equatable {
                     bubbleShape.stroke(mine ? Color.white.opacity(0.6) : Theme.color(for: paragraph.speaker).opacity(0.7), lineWidth: 2)
                 }
             }
-            .scaleEffect(playhead != nil ? 1.01 : 1, anchor: mine ? .trailing : .leading)
-            .animation(Theme.spring, value: playhead != nil)
-            .onTapGesture(count: 2) { player.play(from: paragraph.start) }
-            .help("Double-click to play from \(TranscriptFormatter.timestamp(paragraph.start))")
+
+            // Simultaneous so dragging across the text still selects it.
+            .simultaneousGesture(TapGesture().onEnded { player.play(from: paragraph.start) })
+            .help("Click to play from \(TranscriptFormatter.timestamp(paragraph.start))")
     }
 
     /// Tinting helps tell apart three or more people; a 1:1 chat stays plain gray like iMessage.
@@ -125,6 +125,7 @@ struct BubbleView: View, Equatable {
         }
         .buttonStyle(.plain)
         .opacity(isHovered ? 1 : 0)
+        .animation(.easeOut(duration: 0.15), value: isHovered)
         .help("Play from here")
     }
 
