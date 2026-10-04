@@ -8,12 +8,16 @@ let package = Package(
         .executable(name: "Transkribe", targets: ["Transkribe"])
     ],
     dependencies: [
-        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "1.1.0")
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "1.1.0"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.17.5"),
     ],
     targets: [
         .target(
             name: "TranskribeCore",
-            dependencies: [.product(name: "WhisperKit", package: "WhisperKit")],
+            dependencies: [
+                .product(name: "WhisperKit", package: "WhisperKit"),
+                .product(name: "FluidAudio", package: "FluidAudio"),
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(

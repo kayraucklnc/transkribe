@@ -1,16 +1,26 @@
 import Foundation
 
-/// Who is speaking in a segment. Only set when a recording captured the microphone
-/// and system audio as separate tracks.
-public enum Speaker: String, Codable, Sendable {
-    case me
-    case others
+/// Where a recorded track came from. Imported files have no source.
+public enum TrackSource: String, Codable, Sendable {
+    case microphone
+    case system
+}
 
-    public var label: String {
-        switch self {
-        case .me: "Me"
-        case .others: "Others"
-        }
+/// Speaker numbering: the microphone in a Mic + System recording is always `me`;
+/// voices found by speaker detection are numbered from 1.
+public enum SpeakerID {
+    public static let me = 0
+}
+
+public struct Word: Codable, Equatable, Hashable, Sendable {
+    public var start: TimeInterval
+    public var end: TimeInterval
+    public var text: String
+
+    public init(start: TimeInterval, end: TimeInterval, text: String) {
+        self.start = start
+        self.end = end
+        self.text = text
     }
 }
 
@@ -19,14 +29,34 @@ public struct Segment: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var start: TimeInterval
     public var end: TimeInterval
     public var text: String
-    public var speaker: Speaker?
+    public var speaker: Int?
+    public var words: [Word]
 
-    public init(id: UUID = UUID(), start: TimeInterval, end: TimeInterval, text: String, speaker: Speaker? = nil) {
+    public init(id: UUID = UUID(), start: TimeInterval, end: TimeInterval, text: String, speaker: Int? = nil, words: [Word] = []) {
         self.id = id
         self.start = start
         self.end = end
         self.text = text
         self.speaker = speaker
+        self.words = words
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, start, end, text, speaker, words }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        start = try container.decode(TimeInterval.self, forKey: .start)
+        end = try container.decode(TimeInterval.self, forKey: .end)
+        text = try container.decode(String.self, forKey: .text)
+        words = try container.decodeIfPresent([Word].self, forKey: .words) ?? []
+        if let number = try? container.decodeIfPresent(Int.self, forKey: .speaker) {
+            speaker = number
+        } else {
+            // Version 1 stored "me" / "others".
+            let legacy = try? container.decodeIfPresent(String.self, forKey: .speaker)
+            speaker = legacy.map { $0 == "me" ? SpeakerID.me : 1 }
+        }
     }
 }
 
@@ -34,13 +64,34 @@ public struct Segment: Codable, Equatable, Hashable, Identifiable, Sendable {
 /// relative to the beginning of the transcript timeline.
 public struct AudioTrack: Codable, Equatable, Hashable, Sendable {
     public var fileName: String
-    public var speaker: Speaker?
+    public var source: TrackSource?
     public var offset: TimeInterval
 
-    public init(fileName: String, speaker: Speaker? = nil, offset: TimeInterval = 0) {
+    public init(fileName: String, source: TrackSource? = nil, offset: TimeInterval = 0) {
         self.fileName = fileName
-        self.speaker = speaker
+        self.source = source
         self.offset = offset
+    }
+
+    private enum CodingKeys: String, CodingKey { case fileName, source, offset, speaker }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        offset = try container.decodeIfPresent(TimeInterval.self, forKey: .offset) ?? 0
+        if let source = try container.decodeIfPresent(TrackSource.self, forKey: .source) {
+            self.source = source
+        } else {
+            let legacy = try container.decodeIfPresent(String.self, forKey: .speaker)
+            source = legacy.map { $0 == "me" ? .microphone : .system }
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(fileName, forKey: .fileName)
+        try container.encodeIfPresent(source, forKey: .source)
+        try container.encode(offset, forKey: .offset)
     }
 }
 
@@ -60,6 +111,8 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var tracks: [AudioTrack]
     public var segments: [Segment]
     public var status: TranscriptStatus
+    /// Names the user gave to speakers. Unnamed speakers get a default name.
+    public var speakerNames: [Int: String]
 
     public init(
         id: UUID = UUID(),
@@ -69,7 +122,8 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
         language: String? = nil,
         tracks: [AudioTrack],
         segments: [Segment] = [],
-        status: TranscriptStatus = .pending
+        status: TranscriptStatus = .pending,
+        speakerNames: [Int: String] = [:]
     ) {
         self.id = id
         self.title = title
@@ -79,10 +133,40 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
         self.tracks = tracks
         self.segments = segments
         self.status = status
+        self.speakerNames = speakerNames
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case id, title, createdAt, duration, language, tracks, segments, status, speakerNames
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        duration = try container.decode(TimeInterval.self, forKey: .duration)
+        language = try container.decodeIfPresent(String.self, forKey: .language)
+        tracks = try container.decode([AudioTrack].self, forKey: .tracks)
+        segments = try container.decode([Segment].self, forKey: .segments)
+        status = try container.decode(TranscriptStatus.self, forKey: .status)
+        speakerNames = try container.decodeIfPresent([Int: String].self, forKey: .speakerNames) ?? [:]
+    }
+
+    /// Speakers in order of first appearance.
+    public var speakers: [Int] {
+        var seen = Set<Int>()
+        return segments.compactMap(\.speaker).filter { seen.insert($0).inserted }
+    }
+
+    /// Labels are only worth showing when more than one voice was found.
     public var hasSpeakers: Bool {
-        segments.contains { $0.speaker != nil }
+        speakers.count > 1
+    }
+
+    public func name(of speaker: Int) -> String {
+        if let name = speakerNames[speaker], !name.isEmpty { return name }
+        return speaker == SpeakerID.me ? "Me" : "Speaker \(speaker)"
     }
 
     public var preview: String {

@@ -10,13 +10,15 @@ final class PlayerController {
     private(set) var duration: TimeInterval = 0
     private(set) var isPlaying = false
     private(set) var loadedID: Transcript.ID?
+    private(set) var rate: Float = 1
+    static let rates: [Float] = [1, 1.25, 1.5, 2]
 
     private let player = AVPlayer()
     private var timeObserver: Any?
     private var rateObserver: NSKeyValueObservation?
 
     init() {
-        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 10), queue: .main) { [weak self] time in
+        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 20), queue: .main) { [weak self] time in
             MainActor.assumeIsolated { self?.currentTime = time.seconds.isFinite ? time.seconds : 0 }
         }
         rateObserver = player.observe(\.timeControlStatus) { [weak self] player, _ in
@@ -49,13 +51,23 @@ final class PlayerController {
             player.pause()
         } else {
             if duration > 0, currentTime >= duration - 0.1 { seek(to: 0) }
-            player.play()
+            player.playImmediately(atRate: rate)
         }
     }
 
     func play(from time: TimeInterval) {
         seek(to: time)
-        player.play()
+        player.playImmediately(atRate: rate)
+    }
+
+    func skip(by seconds: TimeInterval) {
+        seek(to: min(max(0, currentTime + seconds), duration))
+    }
+
+    func cycleRate() {
+        let index = Self.rates.firstIndex(of: rate) ?? 0
+        rate = Self.rates[(index + 1) % Self.rates.count]
+        if isPlaying { player.rate = rate }
     }
 
     func seek(to time: TimeInterval) {

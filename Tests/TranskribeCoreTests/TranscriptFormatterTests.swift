@@ -23,11 +23,22 @@ import Testing
 
     @Test func plainTextBreaksParagraphOnSpeakerChange() {
         let transcript = Fixtures.transcript(segments: [
-            Segment(start: 0, end: 1, text: "Hi there.", speaker: .me),
-            Segment(start: 1, end: 2, text: "How are you?", speaker: .me),
-            Segment(start: 2, end: 3, text: "Good!", speaker: .others),
+            Segment(start: 0, end: 1, text: "Hi there.", speaker: SpeakerID.me),
+            Segment(start: 1, end: 2, text: "How are you?", speaker: SpeakerID.me),
+            Segment(start: 2, end: 3, text: "Good!", speaker: 1),
         ])
-        #expect(TranscriptFormatter.plainText(transcript) == "Me: Hi there. How are you?\n\nOthers: Good!")
+        #expect(TranscriptFormatter.plainText(transcript) == "Me: Hi there. How are you?\n\nSpeaker 1: Good!")
+    }
+
+    @Test func usesCustomSpeakerNamesInExports() {
+        var transcript = Fixtures.transcript(segments: [
+            Segment(start: 0, end: 1, text: "Selam.", speaker: 1),
+            Segment(start: 1, end: 2, text: "Merhaba.", speaker: 2),
+        ])
+        transcript.speakerNames = [1: "Ayşe", 2: "Mehmet"]
+        #expect(TranscriptFormatter.plainText(transcript) == "Ayşe: Selam.\n\nMehmet: Merhaba.")
+        #expect(TranscriptFormatter.srt(transcript).contains("Ayşe: Selam."))
+        #expect(TranscriptFormatter.markdown(transcript).contains("*Mehmet* Merhaba."))
     }
 
     @Test func srtNumbersCues() {

@@ -7,23 +7,41 @@ struct TranscriptView: View {
     @Environment(AppModel.self) private var model
     @Environment(PlayerController.self) private var player
     @State private var title = ""
+    @State private var followsPlayback = true
 
     var body: some View {
-        VStack(spacing: 0) {
+        // Computed once per transcript change; playback ticks only update `ParagraphList`.
+        let paragraphs = ParagraphBuilder.paragraphs(from: transcript.segments)
+        let hasSpeakers = transcript.hasSpeakers
+        let names = Dictionary(uniqueKeysWithValues: transcript.speakers.map { ($0, transcript.name(of: $0)) })
+        ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
                     header
-                    status
-                    segments
+                    if hasSpeakers {
+                        SpeakerLegend(transcript: transcript)
+                            .padding(.bottom, 26)
+                    } else if transcript.status == .done, !transcript.segments.isEmpty {
+                        SpeakerCountMenu(transcript: transcript)
+                            .padding(.bottom, 22)
+                    }
+                    StatusView(transcript: transcript)
+                    ParagraphList(transcriptID: transcript.id, paragraphs: paragraphs, names: names, labelsSpeakers: hasSpeakers,
+                                  query: model.query, followsPlayback: followsPlayback, scroll: proxy)
                 }
-                .padding(.horizontal, 36)
-                .padding(.vertical, 28)
-                .frame(maxWidth: 780)
+                .padding(.horizontal, 48)
+                .padding(.top, 30)
+                .padding(.bottom, 130)
+                .frame(maxWidth: 800)
                 .frame(maxWidth: .infinity)
             }
+            .scrollIndicators(.automatic)
+        }
+        .overlay(alignment: .bottom) {
             if !transcript.tracks.isEmpty {
-                Divider()
-                PlayerBar()
+                PlayerCapsule(transcript: transcript)
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 18)
             }
         }
         .navigationTitle("")
@@ -33,74 +51,42 @@ struct TranscriptView: View {
             await player.load(transcript, store: model.store)
         }
         .onChange(of: transcript.title) { _, newValue in title = newValue }
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.space) {
+            player.togglePlayback()
+            return .handled
+        }
     }
 
-    // MARK: - Sections
+    // MARK: - Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TextField("Title", text: $title)
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("Untitled", text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 26, weight: .semibold))
+                .font(.system(size: 30, weight: .bold))
                 .onSubmit { model.rename(transcript.id, to: title) }
-            Text(details)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 14) {
+                MetaLabel(symbol: "calendar", text: transcript.createdAt.formatted(date: .abbreviated, time: .shortened))
+                MetaLabel(symbol: "clock", text: TranscriptFormatter.timestamp(transcript.duration))
+                if let code = transcript.language, let name = Locale.current.localizedString(forLanguageCode: code) {
+                    MetaLabel(symbol: "globe", text: name.capitalized(with: Locale.current))
+                }
+                if transcript.hasSpeakers {
+                    MetaLabel(symbol: "person.2", text: "\(transcript.speakers.count) speakers")
+                }
+            }
         }
         .padding(.bottom, 22)
-    }
-
-    private var details: String {
-        var parts = [
-            transcript.createdAt.formatted(date: .abbreviated, time: .shortened),
-            TranscriptFormatter.timestamp(transcript.duration),
-        ]
-        if let code = transcript.language, let name = Locale.current.localizedString(forLanguageCode: code) {
-            parts.append(name)
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    @ViewBuilder private var status: some View {
-        switch transcript.status {
-        case .pending:
-            StatusBanner(text: "Waiting to transcribe…", progress: nil)
-        case .transcribing:
-            StatusBanner(text: "Transcribing…", progress: model.progress[transcript.id])
-        case .failed(let message):
-            VStack(alignment: .leading, spacing: 10) {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                Button("Try Again") { model.retry(transcript.id) }
-            }
-            .padding(.bottom, 20)
-        case .done:
-            if transcript.segments.isEmpty {
-                Text("No speech was found in this audio.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var segments: some View {
-        let matches = TranscriptSearch.matchingSegmentIDs(in: transcript, query: model.query)
-        let paragraphs = ParagraphBuilder.paragraphs(from: transcript.segments)
-        let current = paragraphs.last { $0.start <= player.currentTime }?.id
-        return ForEach(Array(paragraphs.enumerated()), id: \.element.id) { index, paragraph in
-            let previous = index > 0 ? paragraphs[index - 1].speaker : nil
-            ParagraphRow(
-                paragraph: paragraph,
-                showsSpeaker: paragraph.speaker != nil && (index == 0 || paragraph.speaker != previous),
-                isCurrent: player.isPlaying && paragraph.id == current,
-                isMatch: paragraph.segmentIDs.contains(where: matches.contains),
-                onPlay: { player.play(from: paragraph.start) }
-            )
-        }
     }
 
     // MARK: - Toolbar
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        if #available(macOS 26, *) {
+            ToolbarSpacer(.flexible)
+        }
         ToolbarItemGroup {
             Button {
                 model.copyText(of: transcript.id)
@@ -111,29 +97,36 @@ struct TranscriptView: View {
             .disabled(transcript.segments.isEmpty)
 
             Menu {
-                Button("Text (.txt)") { export(.plainText) }
-                Button("Markdown (.md)") { export(.markdown) }
-                Button("Subtitles (.srt)") { export(.srt) }
-                Divider()
-                Button("Show in Finder") { model.revealInFinder(transcript.id) }
-                Button("Delete", role: .destructive) { model.delete(transcript.id) }
+                Section("Export") {
+                    Button("Text") { export(.plainText) }
+                    Button("Markdown") { export(.markdown) }
+                    Button("Subtitles (SRT)") { export(.srt) }
+                }
+                Section {
+                    Menu("Number of Speakers") {
+                        Button("Detect Automatically") { model.setSpeakerCount(nil, for: transcript.id) }
+                        Divider()
+                        ForEach(1...6, id: \.self) { count in
+                            Button("\(count)") { model.setSpeakerCount(count, for: transcript.id) }
+                        }
+                    }
+                    .disabled(transcript.status != .done)
+                    Button("Transcribe Again") { model.transcribeAgain(transcript.id) }
+                        .disabled(model.activity[transcript.id] != nil)
+                    Button("Show in Finder") { model.revealInFinder(transcript.id) }
+                }
+                Section {
+                    Button("Delete", role: .destructive) { model.delete(transcript.id) }
+                }
             } label: {
-                Label("Export", systemImage: "square.and.arrow.up")
+                Label("More", systemImage: "ellipsis")
             }
-            .help("Export or manage this transcript")
+            .help("Export, speakers and more")
         }
     }
 
-    private enum ExportFormat {
-        case plainText, markdown, srt
-
-        var fileExtension: String {
-            switch self {
-            case .plainText: "txt"
-            case .markdown: "md"
-            case .srt: "srt"
-            }
-        }
+    private enum ExportFormat: String {
+        case plainText = "txt", markdown = "md", srt
     }
 
     private func export(_ format: ExportFormat) {
@@ -143,90 +136,133 @@ struct TranscriptView: View {
         case .srt: TranscriptFormatter.srt(transcript)
         }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "\(transcript.title).\(format.fileExtension)"
-        panel.allowedContentTypes = [UTType(filenameExtension: format.fileExtension) ?? .plainText]
+        panel.nameFieldStringValue = "\(transcript.title).\(format.rawValue)"
+        panel.allowedContentTypes = [UTType(filenameExtension: format.rawValue) ?? .plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
+            model.showToast("Exported")
         } catch {
-            model.alert = .init(message: "Couldn't save the file. \(error.localizedDescription)")
+            model.show(message: "Couldn't save the file. \(error.localizedDescription)")
         }
     }
 }
 
-private struct StatusBanner: View {
+private struct MetaLabel: View {
+    let symbol: String
     let text: String
-    let progress: Double?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        Label(text, systemImage: symbol)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .labelStyle(.titleAndIcon)
+    }
+}
+
+/// Progress for work still running on this transcript.
+private struct StatusView: View {
+    let transcript: Transcript
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Group {
+            switch (transcript.status, model.activity[transcript.id]) {
+            case (.pending, _):
+                banner("Waiting to transcribe…", symbol: "clock", progress: nil)
+            case (_, .transcribing(let progress)?):
+                banner("Transcribing", symbol: "waveform", progress: progress)
+            case (_, .identifyingSpeakers?):
+                banner("Identifying speakers", symbol: "person.2.wave.2", progress: nil)
+            case (.failed(let message), _):
+                HStack(spacing: 12) {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Button("Try Again") { model.retry(transcript.id) }
+                }
+                .padding(14)
+                .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            case (.done, nil) where transcript.segments.isEmpty:
+                ContentUnavailableView("No speech found", systemImage: "waveform.slash",
+                                       description: Text("This recording doesn't seem to contain any speech."))
+            default:
+                EmptyView()
+            }
+        }
+        .padding(.bottom, 22)
+        .animation(Theme.spring, value: model.activity[transcript.id])
+    }
+
+    private func banner(_ text: String, symbol: String, progress: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .symbolEffect(.variableColor.iterative, options: .repeating)
                 Text(text)
                 Spacer()
                 if let progress {
-                    Text(progress.formatted(.percent.precision(.fractionLength(0)))).monospacedDigit()
+                    Text(progress.formatted(.percent.precision(.fractionLength(0))))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
                 }
             }
-            .font(.callout)
+            .font(.callout.weight(.medium))
             .foregroundStyle(.secondary)
             if let progress {
-                ProgressView(value: progress)
+                ProgressView(value: progress).progressViewStyle(.linear).tint(.accentColor)
             } else {
                 ProgressView().progressViewStyle(.linear)
             }
         }
-        .padding(.bottom, 20)
     }
 }
 
-private struct ParagraphRow: View {
-    let paragraph: Paragraph
-    let showsSpeaker: Bool
-    let isCurrent: Bool
-    let isMatch: Bool
-    let onPlay: () -> Void
-    @State private var isHovered = false
+/// The only part of the transcript that follows the playhead.
+private struct ParagraphList: View {
+    let transcriptID: Transcript.ID
+    let paragraphs: [Paragraph]
+    let names: [Int: String]
+    let labelsSpeakers: Bool
+    let query: String
+    let followsPlayback: Bool
+    let scroll: ScrollViewProxy
+    @Environment(PlayerController.self) private var player
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if showsSpeaker, let speaker = paragraph.speaker {
-                Text(speaker.label)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(speaker == .me ? Color.accentColor : Color.purple)
-                    .padding(.top, 14)
-                    .padding(.leading, 64)
+        let current = currentParagraph
+        LazyVStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(paragraphs.enumerated()), id: \.element.id) { index, paragraph in
+                ParagraphView(
+                    paragraph: paragraph,
+                    speakerName: paragraph.speaker.flatMap { names[$0] },
+                    showsSpeaker: labelsSpeakers
+                        && paragraph.speaker != nil
+                        && (index == 0 || paragraphs[index - 1].speaker != paragraph.speaker),
+                    playhead: paragraph.id == current ? player.currentTime : nil,
+                    query: query,
+                    transcriptID: transcriptID,
+                    speakers: names
+                )
+                .equatable()
+                .id(paragraph.id)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                Button(action: onPlay) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 8))
-                            .opacity(isHovered ? 1 : 0)
-                        Text(TranscriptFormatter.timestamp(paragraph.start))
-                    }
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(isHovered ? Color.accentColor : .secondary)
-                    .frame(width: 50, alignment: .trailing)
-                }
-                .buttonStyle(.plain)
-                .help("Play from here")
-
-                Text(paragraph.text)
-                    .font(.system(size: 15))
-                    .lineSpacing(3)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.vertical, 7)
-            .padding(.horizontal, 6)
-            .background(background, in: RoundedRectangle(cornerRadius: 6))
         }
-        .onHover { isHovered = $0 }
+        .onChange(of: current) { _, id in
+            guard player.isPlaying, followsPlayback, let id else { return }
+            withAnimation(.easeInOut(duration: 0.45)) { scroll.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.35)) }
+        }
     }
 
-    private var background: Color {
-        if isMatch { return Color.yellow.opacity(0.25) }
-        if isCurrent { return Color.accentColor.opacity(0.12) }
-        return .clear
+    /// Binary search for the last paragraph starting at or before the playhead.
+    private var currentParagraph: Paragraph.ID? {
+        guard player.isPlaying || player.currentTime > 0 else { return nil }
+        let time = player.currentTime + 0.05
+        var low = 0, high = paragraphs.count
+        while low < high {
+            let mid = (low + high) / 2
+            if paragraphs[mid].start <= time { low = mid + 1 } else { high = mid }
+        }
+        return low > 0 ? paragraphs[low - 1].id : nil
     }
 }

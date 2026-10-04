@@ -1,27 +1,15 @@
 import Foundation
 
-/// A segment as produced by the speech model, relative to the start of its own track.
-public struct RawSegment: Equatable, Sendable {
-    public var start: TimeInterval
-    public var end: TimeInterval
-    public var text: String
-
-    public init(start: TimeInterval, end: TimeInterval, text: String) {
-        self.start = start
-        self.end = end
-        self.text = text
-    }
-}
-
 /// Combines per-track transcription output into one clean, time-ordered transcript.
 public enum TrackMerger {
     public struct Track: Sendable {
-        public var speaker: Speaker?
+        public var source: TrackSource?
         public var offset: TimeInterval
+        /// Segments with speakers already assigned.
         public var segments: [RawSegment]
 
-        public init(speaker: Speaker?, offset: TimeInterval, segments: [RawSegment]) {
-            self.speaker = speaker
+        public init(source: TrackSource?, offset: TimeInterval, segments: [RawSegment]) {
+            self.source = source
             self.offset = offset
             self.segments = segments
         }
@@ -34,25 +22,43 @@ public enum TrackMerger {
     static let echoMinimumWords = 4
 
     public static func merge(_ tracks: [Track]) -> [Segment] {
-        let labelSpeakers = tracks.count > 1
-        let shifted = tracks.flatMap { track in
-            track.segments.compactMap { raw -> Segment? in
+        let shifted = tracks.enumerated().map { trackIndex, track in
+            (source: track.source, segments: track.segments.compactMap { raw -> Segment? in
                 let text = clean(raw.text)
                 guard !text.isEmpty else { return nil }
                 return Segment(
+                    id: stableID(track: trackIndex, start: raw.start, end: raw.end),
                     start: raw.start + track.offset,
                     end: raw.end + track.offset,
                     text: text,
-                    speaker: labelSpeakers ? track.speaker : nil
+                    speaker: raw.speaker,
+                    words: raw.words.map { Word(start: $0.start + track.offset, end: $0.end + track.offset, text: $0.text) }
                 )
-            }
+            })
         }
-        let others = shifted.filter { $0.speaker == .others }
+        let system = shifted.filter { $0.source == .system }.flatMap(\.segments)
         return shifted
-            .filter { segment in
-                segment.speaker != .me || !others.contains { isEcho(segment, of: $0) }
+            .flatMap { track in
+                track.source == .microphone
+                    ? track.segments.filter { mic in !system.contains { isEcho(mic, of: $0) } }
+                    : track.segments
             }
             .sorted { $0.start < $1.start }
+    }
+
+    /// Same input, same ID, so views keep their identity while partial results stream in.
+    static func stableID(track: Int, start: TimeInterval, end: TimeInterval) -> UUID {
+        var hash: (UInt64, UInt64) = (0xcbf29ce484222325, 0x84222325cbf29ce4)
+        for value in [UInt64(track), UInt64(bitPattern: Int64(start * 1000)), UInt64(bitPattern: Int64(end * 1000))] {
+            for shift in stride(from: 0, to: 64, by: 8) {
+                let byte = (value >> UInt64(shift)) & 0xff
+                hash.0 = (hash.0 ^ byte) &* 0x100000001b3
+                hash.1 = (hash.1 ^ byte) &* 0x1000193
+            }
+        }
+        let bytes = withUnsafeBytes(of: (hash.0.bigEndian, hash.1.bigEndian)) { Array($0) }
+        return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                           bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
     }
 
     /// Jaccard similarity of the word sets, ignoring case and punctuation.
@@ -81,7 +87,7 @@ public enum TrackMerger {
     /// Strips Whisper special tokens (`<|en|>`), non-speech markers (`[BLANK_AUDIO]`, `(music)`)
     /// and the subtitle-style dialogue dash Whisper puts in front of some lines.
     static func clean(_ text: String) -> String {
-        text
+        RepetitionFilter.collapse(text)
             .replacingOccurrences(of: #"<\|[^|]*\|>"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^\s*[\[\(][^\]\)]*[\]\)]\s*$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^\s*[-–—]\s*"#, with: "", options: .regularExpression)

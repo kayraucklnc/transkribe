@@ -21,15 +21,15 @@ public enum TranscriptFormatter {
         paragraphs(of: transcript)
             .map { paragraph in
                 let text = paragraph.texts.joined(separator: " ")
-                guard let speaker = paragraph.speaker else { return text }
-                return "\(speaker.label): \(text)"
+                guard transcript.hasSpeakers, let speaker = paragraph.speaker else { return text }
+                return "\(transcript.name(of: speaker)): \(text)"
             }
             .joined(separator: "\n\n")
     }
 
     public static func srt(_ transcript: Transcript) -> String {
         nonEmpty(transcript.segments).enumerated().map { index, segment in
-            let label = segment.speaker.map { "\($0.label): " } ?? ""
+            let label = speakerLabel(segment, in: transcript).map { "\($0): " } ?? ""
             return "\(index + 1)\n\(srtTimestamp(segment.start)) --> \(srtTimestamp(segment.end))\n\(label)\(trimmed(segment.text))\n"
         }
         .joined(separator: "\n")
@@ -37,7 +37,7 @@ public enum TranscriptFormatter {
 
     public static func markdown(_ transcript: Transcript) -> String {
         let lines = nonEmpty(transcript.segments).map { segment in
-            let label = segment.speaker.map { " *\($0.label)*" } ?? ""
+            let label = speakerLabel(segment, in: transcript).map { " *\($0)*" } ?? ""
             return "**[\(timestamp(segment.start))]**\(label) \(trimmed(segment.text))"
         }
         return "# \(transcript.title)\n\n" + lines.joined(separator: "\n\n") + "\n"
@@ -46,7 +46,7 @@ public enum TranscriptFormatter {
     // MARK: - Helpers
 
     private struct Paragraph {
-        var speaker: Speaker?
+        var speaker: Int?
         var texts: [String]
     }
 
@@ -59,6 +59,11 @@ public enum TranscriptFormatter {
                 result.append(Paragraph(speaker: segment.speaker, texts: [text]))
             }
         }
+    }
+
+    private static func speakerLabel(_ segment: Segment, in transcript: Transcript) -> String? {
+        guard transcript.hasSpeakers else { return nil }
+        return segment.speaker.map(transcript.name(of:))
     }
 
     private static func nonEmpty(_ segments: [Segment]) -> [Segment] {

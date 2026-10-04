@@ -22,10 +22,10 @@ import Testing
 
     @Test func breaksOnSpeakerChange() {
         let paragraphs = ParagraphBuilder.paragraphs(from: [
-            Segment(start: 0, end: 1, text: "Hi.", speaker: .me),
-            Segment(start: 1, end: 2, text: "Hello.", speaker: .others),
+            Segment(start: 0, end: 1, text: "Hi.", speaker: 1),
+            Segment(start: 1, end: 2, text: "Hello.", speaker: 2),
         ])
-        #expect(paragraphs.map(\.speaker) == [.me, .others])
+        #expect(paragraphs.map(\.speaker) == [1, 2])
     }
 
     @Test func capsParagraphLength() {
@@ -34,6 +34,15 @@ import Testing
         #expect(paragraphs.count > 1)
         #expect(paragraphs.allSatisfy { $0.end - $0.start <= ParagraphBuilder.maxDuration + 5 })
         #expect(paragraphs.flatMap(\.segmentIDs) == segments.map(\.id))
+    }
+
+    @Test func collectsWordsAndSynthesizesThemWhenMissing() {
+        let paragraphs = ParagraphBuilder.paragraphs(from: [
+            Segment(start: 0, end: 1, text: "Hello world", words: [Word(start: 0, end: 0.5, text: " Hello"), Word(start: 0.5, end: 1, text: " world")]),
+            Segment(start: 1.2, end: 2, text: "Again"),
+        ])
+        #expect(paragraphs[0].words.map(\.text) == [" Hello", " world", " Again"])
+        #expect(paragraphs[0].words.last?.start == 1.2)
     }
 
     @Test func paragraphIDIsStableAcrossRebuilds() {

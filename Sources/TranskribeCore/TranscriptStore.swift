@@ -62,9 +62,9 @@ public struct TranscriptStore: Sendable {
     public func recoverInterruptedRecordings() throws -> [Transcript] {
         let fm = FileManager.default
         guard fm.fileExists(atPath: rootDirectory.path) else { return [] }
-        let candidates: [(file: String, speaker: Speaker)] = [
-            (RecordingSession.microphoneFile, .me),
-            (RecordingSession.systemFile, .others),
+        let candidates: [(file: String, source: TrackSource)] = [
+            (RecordingSession.microphoneFile, .microphone),
+            (RecordingSession.systemFile, .system),
         ]
         var recovered: [Transcript] = []
         for folder in try fm.contentsOfDirectory(at: rootDirectory, includingPropertiesForKeys: [.creationDateKey]) {
@@ -72,7 +72,7 @@ public struct TranscriptStore: Sendable {
                   !fm.fileExists(atPath: folder.appendingPathComponent(Self.fileName).path) else { continue }
             let tracks = candidates
                 .filter { fm.fileExists(atPath: folder.appendingPathComponent($0.file).path) }
-                .map { AudioTrack(fileName: $0.file, speaker: $0.speaker) }
+                .map { AudioTrack(fileName: $0.file, source: $0.source) }
             guard !tracks.isEmpty else { continue }
             let created = (try? folder.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
             let transcript = Transcript(id: id, title: TitleGenerator.recordingTitle(at: created), createdAt: created, tracks: tracks)

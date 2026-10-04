@@ -72,7 +72,7 @@ import Testing
 
         #expect(recovered.count == 1)
         #expect(recovered[0].status == .pending)
-        #expect(Set(recovered[0].tracks.map(\.speaker)) == [.me, .others])
+        #expect(Set(recovered[0].tracks.compactMap(\.source)) == [.microphone, .system])
         #expect(try store.loadAll().map(\.id) == recovered.map(\.id))
     }
 

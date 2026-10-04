@@ -11,9 +11,10 @@ struct TranskribeApp: App {
             ContentView()
                 .environment(delegate.model)
                 .environment(delegate.player)
-                .frame(minWidth: 720, minHeight: 460)
+                .frame(minWidth: 760, minHeight: 520)
         }
-        .defaultSize(width: 980, height: 640)
+        .defaultSize(width: 1080, height: 720)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button(delegate.model.isRecording ? "Stop Recording" : "New Recording") {
@@ -31,6 +32,15 @@ struct TranskribeApp: App {
                 .disabled(delegate.model.selection == nil)
             }
         }
+
+        MenuBarExtra {
+            MenuBarView()
+                .environment(delegate.model)
+        } label: {
+            MenuBarLabel()
+                .environment(delegate.model)
+        }
+        .menuBarExtraStyle(.window)
     }
 }
 

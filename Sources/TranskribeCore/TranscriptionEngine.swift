@@ -48,6 +48,8 @@ public actor TranscriptionEngine {
             onProgress(.loading(firstTime: !FileManager.default.fileExists(atPath: preparedMarker.path)))
             let config = WhisperKitConfig(
                 modelFolder: folder.path,
+                // Keep the tokenizer next to the model; the default (~/Documents) triggers a privacy prompt.
+                tokenizerFolder: modelsDirectory,
                 verbose: false,
                 logLevel: .error,
                 prewarm: true,
@@ -92,6 +94,7 @@ public actor TranscriptionEngine {
             temperatureFallbackCount: 3,
             detectLanguage: true,
             skipSpecialTokens: true,
+            wordTimestamps: true,
             chunkingStrategy: .vad
         )
         let results = try await whisper.transcribe(audioArray: samples, decodeOptions: options)
@@ -99,7 +102,14 @@ public actor TranscriptionEngine {
 
         let segments = results
             .flatMap(\.segments)
-            .map { RawSegment(start: TimeInterval($0.start), end: TimeInterval($0.end), text: $0.text) }
+            .map { segment in
+                RawSegment(
+                    start: TimeInterval(segment.start),
+                    end: TimeInterval(segment.end),
+                    text: segment.text,
+                    words: (segment.words ?? []).map { Word(start: TimeInterval($0.start), end: TimeInterval($0.end), text: $0.word) }
+                )
+            }
             .sorted { $0.start < $1.start }
         return Output(segments: segments, language: Self.dominantLanguage(results.map(\.language)))
     }

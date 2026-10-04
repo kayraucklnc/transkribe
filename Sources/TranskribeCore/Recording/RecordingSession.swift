@@ -113,14 +113,14 @@ public final class RecordingSession: @unchecked Sendable {
 
     /// Stops capture and returns the tracks that contain audio, aligned on a shared timeline.
     public func stop() async throws -> [AudioTrack] {
-        var starts: [(file: String, speaker: Speaker, start: Double)] = []
+        var starts: [(file: String, source: TrackSource, start: Double)] = []
         if source.usesMicrophone, let start = microphone.stop() {
-            starts.append((Self.microphoneFile, .me, start))
+            starts.append((Self.microphoneFile, .microphone, start))
         }
         if source.usesSystemAudio, let start = await system.stop() {
-            starts.append((Self.systemFile, .others, start))
+            starts.append((Self.systemFile, .system, start))
         }
         guard let origin = starts.map(\.start).min() else { throw RecordingError.nothingRecorded }
-        return starts.map { AudioTrack(fileName: $0.file, speaker: $0.speaker, offset: $0.start - origin) }
+        return starts.map { AudioTrack(fileName: $0.file, source: $0.source, offset: $0.start - origin) }
     }
 }
