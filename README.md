@@ -21,6 +21,7 @@ Requires macOS 14+ on Apple Silicon and Xcode 16+ (command line tools are enough
 ```bash
 scripts/build-app.sh            # → build/Transkribe.app
 scripts/build-app.sh --install  # also copies it to /Applications
+scripts/make-dmg.sh             # → build/Transkribe.dmg (drag-to-Applications installer)
 open build/Transkribe.app
 ```
 

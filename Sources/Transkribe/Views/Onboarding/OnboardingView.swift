@@ -10,12 +10,12 @@ struct OnboardingView: View {
     @State private var forward = true
 
     enum Step: Int, CaseIterable {
-        case welcome, languages, quality, words, permissions, ready
+        case welcome, languages, quality, words, permissions, dictation, ready
     }
 
     var body: some View {
         ZStack {
-            Stage.canvas.ignoresSafeArea()
+            StageBackdrop()
             VStack(spacing: 0) {
                 if step != .welcome {
                     StepDots(step: step)
@@ -30,6 +30,7 @@ struct OnboardingView: View {
                     case .quality: quality
                     case .words: words
                     case .permissions: PermissionsStep()
+                    case .dictation: DictationStep()
                     case .ready: ReadyStep()
                     }
                 }
@@ -55,35 +56,32 @@ struct OnboardingView: View {
     // MARK: - Steps
 
     private var welcome: some View {
-        VStack(spacing: 26) {
-            ZStack {
-                Circle()
-                    .fill(Theme.record.opacity(0.35))
-                    .frame(width: 150, height: 150)
-                    .blur(radius: 40)
-                Image(systemName: "waveform")
-                    .font(.system(size: 54, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 120, height: 120)
-                    .background(
-                        LinearGradient(colors: [Color(red: 1, green: 0.42, blue: 0.4), Color(red: 0.84, green: 0.12, blue: 0.36)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    )
-                    .shadow(color: Theme.record.opacity(0.4), radius: 20, y: 10)
-            }
-            VStack(spacing: 12) {
-                Text("Every conversation,\nwritten down.")
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
-                    .multilineTextAlignment(.center)
-                Text("Record a call or drop any recording. Transkribe turns it into a readable chat you can search, replay and ask about — privately, on your Mac.")
-                    .font(.title3)
+        VStack(spacing: 30) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 128, height: 128)
+                .shadow(color: Theme.record.opacity(0.45), radius: 30, y: 12)
+                .modifier(Rise(delay: 0))
+            VStack(spacing: 14) {
+                Text("Every word, kept.")
+                    .font(.system(size: 54, weight: .bold))
+                    .tracking(-1.4)
+                Text("Transkribe turns your calls, meetings and voice notes into chats you can read, search and ask about. Everything stays on this Mac.")
+                    .font(.system(size: 17))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 520)
             }
+            .modifier(Rise(delay: 0.08))
+            HStack(spacing: 14) {
+                Pillar(symbol: "record.circle", tint: Theme.record, title: "Record", detail: "Calls and meetings")
+                Pillar(symbol: "arrow.down.doc", tint: .blue, title: "Import", detail: "Any audio or video file")
+                Pillar(symbol: "mic", tint: .gray, title: "Dictate", detail: "Talk, and it types for you")
+            }
+            .modifier(Rise(delay: 0.16))
             PrimaryButton(title: "Get Started") { go(to: .languages) }
-                .padding(.top, 8)
+                .padding(.top, 6)
+                .modifier(Rise(delay: 0.24))
         }
     }
 
@@ -134,7 +132,7 @@ struct OnboardingView: View {
                     .font(.body.weight(.medium))
             }
             Spacer()
-            if step == .words || step == .permissions {
+            if step == .words || step == .permissions || step == .dictation {
                 Button("Skip") { advance() }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -152,7 +150,7 @@ struct OnboardingView: View {
         case .languages:
             draft.quality = EngineCatalog.recommendedQuality(for: draft.languages)
             go(to: .quality)
-        case .permissions:
+        case .dictation:
             // Settle the setup now so downloads start while the last screen shows.
             var settings = draft
             settings.completedOnboarding = false
@@ -181,8 +179,8 @@ private struct Heading: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 30, weight: .bold, design: .rounded))
-            Text(subtitle).font(.title3).foregroundStyle(.secondary)
+            Text(title).font(.system(size: 32, weight: .bold)).tracking(-0.6)
+            Text(subtitle).font(.system(size: 16)).foregroundStyle(.secondary)
         }
     }
 }
@@ -200,8 +198,8 @@ struct PrimaryButton: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 28)
                 .padding(.vertical, 12)
-                .background(Theme.myBubble, in: Capsule())
-                .shadow(color: Color.accentColor.opacity(isHovered ? 0.5 : 0.3), radius: isHovered ? 16 : 10, y: 4)
+                .background(Theme.record, in: Capsule())
+                .shadow(color: Theme.record.opacity(isHovered ? 0.55 : 0.3), radius: isHovered ? 18 : 10, y: 4)
                 .scaleEffect(isHovered ? 1.03 : 1)
                 .opacity(isEnabled ? 1 : 0.4)
         }
@@ -218,7 +216,7 @@ private struct StepDots: View {
         HStack(spacing: 8) {
             ForEach(OnboardingView.Step.allCases.dropFirst(), id: \.self) { item in
                 Capsule()
-                    .fill(item.rawValue <= step.rawValue ? Color.accentColor : Color.primary.opacity(0.15))
+                    .fill(item.rawValue <= step.rawValue ? Theme.record : Color.primary.opacity(0.15))
                     .frame(width: item == step ? 26 : 8, height: 8)
                     .animation(.spring(response: 0.4), value: step)
             }
@@ -232,7 +230,7 @@ private struct PermissionsStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Heading(title: "Two quick permissions", subtitle: "So Transkribe can hear your conversations. You can also do this later.")
+            Heading(title: "Let Transkribe listen", subtitle: "macOS asks once for each. You can also do this later in System Settings.")
             PermissionCard(symbol: "mic.fill", title: "Your microphone", detail: "To record what you and people in the room say.",
                            granted: microphone) {
                 Task {
@@ -242,7 +240,7 @@ private struct PermissionsStep: View {
             }
             PermissionCard(symbol: "speaker.wave.2.fill", title: "Sound from calls and apps",
                            detail: "To capture the other side of Zoom, Meet or FaceTime calls. Your screen is never recorded.",
-                           granted: systemAudio) {
+                           granted: systemAudio, tint: .blue) {
                 _ = CGRequestScreenCaptureAccess()
                 systemAudio = CGPreflightScreenCaptureAccess()
             }
@@ -255,6 +253,7 @@ private struct PermissionCard: View {
     let title: String
     let detail: String
     let granted: Bool
+    var tint: Color = Theme.record
     let onAllow: () -> Void
 
     var body: some View {
@@ -263,7 +262,7 @@ private struct PermissionCard: View {
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 46, height: 46)
-                .background(Theme.myBubble, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .background(tint, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.headline)
                 Text(detail).font(.callout).foregroundStyle(.secondary)
@@ -281,7 +280,8 @@ private struct PermissionCard: View {
             }
         }
         .padding(16)
-        .background(Theme.card.opacity(0.8), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Stage.hairline, lineWidth: 1))
         .animation(.spring(response: 0.35), value: granted)
     }
 }
@@ -290,38 +290,62 @@ private struct ReadyStep: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        VStack(spacing: 22) {
+        VStack(spacing: 24) {
             ZStack {
-                Circle().stroke(Color.primary.opacity(0.08), lineWidth: 10)
+                Circle().stroke(Color.primary.opacity(0.08), lineWidth: 8)
                 Circle()
                     .trim(from: 0, to: progress)
-                    .stroke(AngularGradient(colors: [.accentColor, .purple, .pink, .accentColor], center: .center),
-                            style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                    .stroke(Theme.record, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(.spring(response: 0.6), value: progress)
-                Image(systemName: isDone ? "checkmark" : "arrow.down")
-                    .font(.system(size: 36, weight: .bold))
-                    .foregroundStyle(.tint)
+                Image(systemName: isDone ? "checkmark" : "waveform")
+                    .font(.system(size: 38, weight: .bold))
+                    .foregroundStyle(isDone ? Color.green : Color.primary)
                     .contentTransition(.symbolEffect(.replace))
             }
-            .frame(width: 130, height: 130)
-            Text(isDone ? "You're all set" : "Getting things ready")
-                .font(.system(size: 30, weight: .bold, design: .rounded))
+            .frame(width: 124, height: 124)
+            Text(isDone ? "You're all set" : title)
+                .font(.system(size: 32, weight: .bold))
+                .tracking(-0.6)
             Text(isDone
-                 ? "Press the red button to record, or drop any recording into the window."
-                 : "This happens once. You can start using Transkribe now — anything you record waits until it's ready.")
-                .font(.title3)
+                 ? "Press the red button to record, drop any recording into the window, or use your shortcut to dictate."
+                 : detail)
+                .font(.system(size: 16))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 480)
+            if !isDone {
+                Text("You can start now. Anything you record waits until it's ready.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .frame(maxWidth: .infinity)
     }
 
+    private var title: String {
+        switch model.modelPreparation {
+        case .downloading?: "Downloading the speech model"
+        case .loading(true)?: "Tuning it for your Mac"
+        default: "Getting things ready"
+        }
+    }
+
+    private var detail: String {
+        switch model.modelPreparation {
+        case .downloading(let fraction)?:
+            "\(fraction.formatted(.percent.precision(.fractionLength(0)))) · It runs entirely on this Mac, so it's downloaded once."
+        case .loading(true)?:
+            "macOS optimizes the model for your Mac's chip. This takes a few minutes, only the first time."
+        default:
+            "Almost there."
+        }
+    }
+
     private var progress: Double {
         switch model.modelPreparation {
-        case .downloading(let fraction)?: max(0.04, fraction * 0.9)
-        case .loading?: 0.95
+        case .downloading(let fraction)?: max(0.04, fraction * 0.85)
+        case .loading?: 0.92
         case .ready?: 1
         case nil: 0.04
         }
@@ -330,5 +354,89 @@ private struct ReadyStep: View {
     private var isDone: Bool {
         if case .ready? = model.modelPreparation { return true }
         return false
+    }
+}
+
+/// Teaches the shortcut and asks for Accessibility so dictated words can be typed into other apps.
+private struct DictationStep: View {
+    @Environment(DictationController.self) private var dictation
+    @State private var isTrusted = TextInserter.isTrusted
+
+    var body: some View {
+        @Bindable var dictation = dictation
+        VStack(alignment: .leading, spacing: 22) {
+            Heading(title: "Talk instead of typing",
+                    subtitle: "In any app, press your shortcut and speak. Let go (or press Return) and your words appear where the cursor is.")
+            HStack(spacing: 16) {
+                Image(systemName: "keyboard")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 46, height: 46)
+                    .background(Color.gray, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Your shortcut").font(.headline)
+                    Text("Click to change it, then press the keys you want.").font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                ShortcutRecorder(shortcut: $dictation.shortcut, onBegin: dictation.suspendShortcut, onEnd: dictation.installShortcut)
+            }
+            .padding(16)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Stage.hairline, lineWidth: 1))
+            PermissionCard(symbol: "character.cursor.ibeam", title: "Type for you",
+                           detail: "Lets dictation put words into other apps. Without it, your words are copied and you press ⌘V.",
+                           granted: isTrusted, tint: .purple) {
+                TextInserter.requestTrust()
+            }
+        }
+        .task {
+            // Accessibility is granted in System Settings; notice when the user comes back.
+            while !Task.isCancelled {
+                isTrusted = TextInserter.isTrusted
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+}
+
+/// One of the three things Transkribe does, on the welcome screen.
+private struct Pillar: View {
+    let symbol: String
+    let tint: Color
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(tint, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            Text(title).font(.system(size: 14, weight: .semibold))
+            Text(detail)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(width: 150)
+        .padding(.vertical, 18)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Stage.hairline, lineWidth: 1))
+    }
+}
+
+/// Fades and lifts content in when it first appears.
+private struct Rise: ViewModifier {
+    let delay: Double
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown ? 0 : 16)
+            .onAppear {
+                withAnimation(.spring(response: 0.7, dampingFraction: 0.85).delay(delay)) { shown = true }
+            }
     }
 }

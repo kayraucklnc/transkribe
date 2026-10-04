@@ -37,6 +37,8 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.5), value: model.settings.completedOnboarding)
+        // Nothing to search or click in the toolbar until setup is done.
+        .toolbar(model.settings.completedOnboarding ? .visible : .hidden, for: .windowToolbar)
         .overlay(alignment: .top) {
             if let toast = model.toast {
                 Toast(message: toast)
