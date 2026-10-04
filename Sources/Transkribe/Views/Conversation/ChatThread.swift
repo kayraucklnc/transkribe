@@ -7,8 +7,6 @@ struct ChatThread: View {
     let isLive: Bool
     @Environment(AppModel.self) private var model
     @State private var flashID: Paragraph.ID?
-    /// Keeps the bubble you're reading in place while new text arrives.
-    @State private var scrollAnchor: String?
 
     /// Speakers whose side is certain. While a transcript is still being worked on, detected
     /// speakers can still change, so their lines wait in the middle; only the microphone
@@ -52,7 +50,6 @@ struct ChatThread: View {
                 .frame(maxWidth: 860)
                 .frame(maxWidth: .infinity)
             }
-            .scrollPosition(id: $scrollAnchor, anchor: .top)
             .onChange(of: transcript.segments.count) { _, _ in
                 guard isLive else { return }
                 withAnimation(.easeOut(duration: 0.35)) { proxy.scrollTo("live-end", anchor: .bottom) }
@@ -62,7 +59,7 @@ struct ChatThread: View {
                 guard let focus = model.focus, focus.id == transcript.id else { return }
                 guard let target = starts.last(where: { $0.start <= focus.time + 0.05 })?.id ?? starts.first?.id else { return }
                 try? await Task.sleep(for: .milliseconds(150))
-                withAnimation(.easeInOut(duration: 0.5)) { proxy.scrollTo(target, anchor: UnitPoint(x: 0.5, y: 0.35)) }
+                withAnimation(.easeInOut(duration: 0.5)) { proxy.scrollTo(ChatLayout.Item.ID.bubble(target), anchor: UnitPoint(x: 0.5, y: 0.35)) }
                 withAnimation(.easeIn(duration: 0.2)) { flashID = target }
                 try? await Task.sleep(for: .seconds(1.6))
                 withAnimation(.easeOut(duration: 0.8)) { flashID = nil }
@@ -71,7 +68,8 @@ struct ChatThread: View {
     }
 }
 
-/// The only part of the thread that follows the playhead (20 times a second).
+/// The thread's messages. It doesn't read the playhead itself (that would re-lay out every
+/// message 20 times a second); `PlayheadWatcher` only reports when the current bubble changes.
 private struct BubbleList: View {
     let transcriptID: Transcript.ID
     let items: [ChatLayout.Item]
@@ -84,10 +82,10 @@ private struct BubbleList: View {
     /// nil = every speaker is settled.
     let settled: Set<Int>?
     let scroll: ScrollViewProxy
+    @State private var current: Paragraph.ID?
     @Environment(PlayerController.self) private var player
 
     var body: some View {
-        let current = currentBubble
         LazyVStack(spacing: 0) {
             ForEach(items) { item in
                 switch item {
@@ -101,7 +99,7 @@ private struct BubbleList: View {
                         bubble: bubble,
                         name: bubble.paragraph.speaker.flatMap { names[$0] },
                         showsAvatar: labelsSpeakers,
-                        playhead: bubble.id == current ? player.currentTime : nil,
+                        isCurrent: bubble.id == current,
                         query: query,
                         transcriptID: transcriptID,
                         speakers: names,
@@ -109,7 +107,6 @@ private struct BubbleList: View {
                         isProvisional: settled.map { set in bubble.paragraph.speaker.map { !set.contains($0) } ?? true } ?? false
                     )
                     .equatable()
-                    .id(bubble.id)
                     // New messages arrive like a sent message: a small spring from their side.
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.85, anchor: bubble.isMine ? .bottomTrailing : .bottomLeading)
@@ -120,13 +117,28 @@ private struct BubbleList: View {
                 }
             }
         }
-        .scrollTargetLayout()
+        .background(PlayheadWatcher(starts: starts, current: $current))
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: items.count)
         .animation(.spring(response: 0.6, dampingFraction: 0.8), value: settled == nil)
         .onChange(of: current) { _, id in
             guard player.isPlaying, let id else { return }
-            withAnimation(.easeInOut(duration: 0.45)) { scroll.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.4)) }
+            withAnimation(.easeInOut(duration: 0.45)) { scroll.scrollTo(ChatLayout.Item.ID.bubble(id), anchor: UnitPoint(x: 0.5, y: 0.4)) }
         }
+    }
+}
+
+/// Follows the player and reports which bubble is being played, only when that changes.
+private struct PlayheadWatcher: View {
+    let starts: [(start: TimeInterval, id: Paragraph.ID)]
+    @Binding var current: Paragraph.ID?
+    @Environment(PlayerController.self) private var player
+
+    var body: some View {
+        let bubble = currentBubble
+        Color.clear
+            .onChange(of: bubble, initial: true) { _, id in
+                if current != id { current = id }
+            }
     }
 
     private var currentBubble: Paragraph.ID? {

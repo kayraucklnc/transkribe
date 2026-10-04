@@ -7,7 +7,8 @@ struct BubbleView: View, Equatable {
     let bubble: ChatLayout.Bubble
     let name: String?
     let showsAvatar: Bool
-    let playhead: TimeInterval?
+    /// The bubble being played: only this one follows the playhead, word by word.
+    let isCurrent: Bool
     let query: String
     let transcriptID: Transcript.ID
     let speakers: [Int: String]
@@ -25,12 +26,13 @@ struct BubbleView: View, Equatable {
             && lhs.bubble.showsName == rhs.bubble.showsName
             && lhs.bubble.paragraph.words.count == rhs.bubble.paragraph.words.count
             && lhs.bubble.paragraph.end == rhs.bubble.paragraph.end && lhs.bubble.paragraph.speaker == rhs.bubble.paragraph.speaker
-            && lhs.name == rhs.name && lhs.showsAvatar == rhs.showsAvatar && lhs.playhead == rhs.playhead
+            && lhs.name == rhs.name && lhs.showsAvatar == rhs.showsAvatar && lhs.isCurrent == rhs.isCurrent
             && lhs.query == rhs.query && lhs.speakers == rhs.speakers && lhs.isFlashing == rhs.isFlashing
             && lhs.bubble.reactions == rhs.bubble.reactions && lhs.isProvisional == rhs.isProvisional
     }
 
     private var paragraph: Paragraph { bubble.paragraph }
+    private var playhead: TimeInterval? { isCurrent ? player.currentTime : nil }
     private var mine: Bool { bubble.isMine && !isProvisional }
 
     var body: some View {

@@ -6,6 +6,8 @@ struct SettingsView: View {
         TabView {
             TranscriptionSettingsTab()
                 .tabItem { Label("Transcription", systemImage: "waveform") }
+            DictationSettingsTab()
+                .tabItem { Label("Dictation", systemImage: "mic.badge.plus") }
             VocabularySettingsTab()
                 .tabItem { Label("Vocabulary", systemImage: "character.book.closed") }
             AISettingsTab()
@@ -46,6 +48,71 @@ private struct TranscriptionSettingsTab: View {
                 .buttonStyle(.link)
             }
             .padding(24)
+        }
+    }
+}
+
+private struct DictationSettingsTab: View {
+    @Environment(DictationController.self) private var dictation
+    @State private var isTrusted = TextInserter.isTrusted
+
+    var body: some View {
+        @Bindable var dictation = dictation
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                Section(title: "Speak anywhere") {
+                    Text("Press the shortcut in any app, talk, then press Return. What you said is typed where your cursor is, or copied if there's nowhere to type.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        Text("Shortcut")
+                        Spacer()
+                        Picker("Shortcut", selection: $dictation.shortcut) {
+                            ForEach(DictationShortcut.allCases) { Text($0.label).tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(width: 140)
+                    }
+                    if !dictation.shortcutIsAvailable {
+                        Label("Another app is using this shortcut. Pick a different one.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    Button("Try It Now") { dictation.start() }
+                }
+                Section(title: "Speed") {
+                    Picker("Speed", selection: $dictation.speed) {
+                        ForEach(DictationSpeed.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    Text(dictation.speed.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Section(title: "Typing for you") {
+                    if isTrusted {
+                        Label("Transkribe can type into other apps.", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Text("To type into other apps, Transkribe needs Accessibility access. Without it, your words are copied and you press ⌘V.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Button("Allow Typing…") {
+                            TextInserter.requestTrust()
+                            NSWorkspace.shared.open(TextInserter.settingsURL)
+                        }
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .task {
+            // Accessibility is granted in System Settings; notice when the user comes back.
+            while !Task.isCancelled {
+                isTrusted = TextInserter.isTrusted
+                try? await Task.sleep(for: .seconds(1))
+            }
         }
     }
 }

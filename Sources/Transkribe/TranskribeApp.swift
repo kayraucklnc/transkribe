@@ -36,6 +36,7 @@ struct TranskribeApp: App {
 
         Settings {
             SettingsView()
+                .environment(delegate.dictation)
                 .environment(delegate.ai)
                 .environment(delegate.model)
         }
@@ -43,6 +44,7 @@ struct TranskribeApp: App {
         MenuBarExtra {
             MenuBarView()
                 .environment(delegate.model)
+                .environment(delegate.dictation)
         } label: {
             MenuBarLabel()
                 .environment(delegate.model)
@@ -55,6 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor let model = AppModel()
     @MainActor let player = PlayerController()
     @MainActor lazy var ai = AIService(model: model)
+    @MainActor lazy var dictation = DictationController(model: model)
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated { dictation.installShortcut() }
+    }
 
     /// Files dropped on the Dock icon or opened with "Open With → Transkribe".
     func application(_ application: NSApplication, open urls: [URL]) {

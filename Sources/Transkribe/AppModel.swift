@@ -152,6 +152,8 @@ final class AppModel {
     }
 
     var isRecording: Bool { recordingState != .idle }
+    /// Whether the shared engine is busy (importing, recording live, or enhancing).
+    var isTranscribingSomething: Bool { transcribingID != nil || live != nil || enhancingID != nil }
 
     // MARK: - Import
 

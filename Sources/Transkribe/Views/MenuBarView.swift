@@ -4,6 +4,7 @@ import TranskribeCore
 /// Record without opening the window, e.g. while a meeting app is full screen.
 struct MenuBarView: View {
     @Environment(AppModel.self) private var model
+    @Environment(DictationController.self) private var dictation
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -38,6 +39,18 @@ struct MenuBarView: View {
                 .tint(Theme.record)
                 .disabled(model.recordingState != .idle)
             }
+            Button { dictation.start() } label: {
+                HStack {
+                    Label("Dictate", systemImage: "mic")
+                    Spacer()
+                    if dictation.shortcut != .off {
+                        Text(dictation.shortcut.label).foregroundStyle(.secondary)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isRecording)
             Divider()
             HStack {
                 Button("Open Transkribe") {

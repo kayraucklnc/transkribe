@@ -23,10 +23,16 @@ public enum ChatLayout {
         case separator(TimeInterval)
         case bubble(Bubble)
 
-        public var id: String {
+        /// Cheap to hash and compare: lists ask for ids constantly while laying out.
+        public enum ID: Hashable, Sendable {
+            case separator(Int)
+            case bubble(Paragraph.ID)
+        }
+
+        public var id: ID {
             switch self {
-            case .separator(let time): "separator-\(Int(time * 1000))"
-            case .bubble(let bubble): bubble.id.uuidString
+            case .separator(let time): .separator(Int(time * 1000))
+            case .bubble(let bubble): .bubble(bubble.id)
             }
         }
     }
