@@ -135,9 +135,13 @@ final class DictationController {
     }
 
     /// Preloads the dictation model in the background so the first take is instant.
+    /// Waits for the app's own model first: when dictation uses the same setup it shares that
+    /// model instead of loading a second copy.
     func warmUp() {
         Task {
-            try? await Task.sleep(for: .seconds(8))
+            for _ in 0..<60 where model.modelPreparation != .ready {
+                try? await Task.sleep(for: .seconds(2))
+            }
             guard phase == .hidden else { return }
             prepareEngine()
         }
@@ -360,7 +364,7 @@ final class DictationController {
     private func scheduleRelease() {
         releaseTask?.cancel()
         releaseTask = Task {
-            try? await Task.sleep(for: .seconds(1800))
+            try? await Task.sleep(for: .seconds(900))
             guard !Task.isCancelled, phase == .hidden else { return }
             engine = nil
             prepareTask = nil
