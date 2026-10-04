@@ -28,7 +28,7 @@ final class DictationPanelHost {
     }
 
     private func makePanel(controller: DictationController) -> NSPanel {
-        let panel = FloatingPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 120),
+        let panel = FloatingPanel(contentRect: NSRect(x: 0, y: 0, width: 600, height: 150),
                                   styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: true)
         panel.isFloatingPanel = true
         panel.level = .statusBar
@@ -76,8 +76,24 @@ struct DictationPill: View {
         ZStack {
             switch controller.phase {
             case .listening:
-                Waveform(levels: controller.levels)
-                    .transition(.opacity)
+                VStack(spacing: 8) {
+                    if !controller.preview.isEmpty {
+                        // The latest words, newest on the right; older ones fade off to the left.
+                        Text(controller.preview)
+                            .font(.system(size: 13.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                            .frame(maxWidth: 420)
+                            .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.12)],
+                                                 startPoint: .leading, endPoint: .trailing))
+                            .contentTransition(.opacity)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
+                    Waveform(levels: controller.levels)
+                }
+                .animation(.easeOut(duration: 0.2), value: controller.preview)
+                .transition(.opacity)
             case .transcribing:
                 if let progress = controller.setupProgress {
                     // First use of a new speed: say so instead of looking stuck.
@@ -112,7 +128,7 @@ struct DictationPill: View {
                 EmptyView()
             }
         }
-        .frame(height: 22)
+        .frame(minHeight: 22)
         .padding(.horizontal, 22)
         .padding(.vertical, 11)
         .frame(minWidth: 156)

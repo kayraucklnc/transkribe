@@ -26,6 +26,9 @@ final class DictationController {
     private(set) var levels: [Double] = Array(repeating: 0, count: DictationController.historyLength)
     /// Shown briefly below the pill the first few times.
     private(set) var showsHint = false
+    /// A rough transcript of what's been said so far, updated while listening.
+    private(set) var preview = ""
+    private var previewTask: Task<Void, Never>?
     /// What the chosen model is doing before it can listen (downloading or loading), if anything.
     private(set) var setup: TranscriptionEngine.Preparation?
     var setupProgress: Double? {
@@ -150,6 +153,7 @@ final class DictationController {
         showsHint = uses < 5
         UserDefaults.standard.set(uses + 1, forKey: Self.usesKey)
         phase = .listening
+        preview = ""
         startedAt = Date()
         panel.show(controller: self)
         claimSessionKeys()
@@ -165,6 +169,7 @@ final class DictationController {
                     Task { @MainActor in self?.push(level) }
                 }
                 prepareEngine()
+                startPreview(capture)
                 try await Task.sleep(for: Self.maximumDuration)
                 if phase == .listening { finish() }
             } catch is CancellationError {
@@ -180,6 +185,7 @@ final class DictationController {
 
     func finish() {
         guard phase == .listening else { return }
+        previewTask?.cancel()
         claimEscapeOnly()
         showsHint = false
         phase = .transcribing
@@ -211,6 +217,7 @@ final class DictationController {
     }
 
     func cancel() {
+        previewTask?.cancel()
         releaseSessionKeys()
         _ = capture?.stop()
         capture = nil
@@ -219,6 +226,25 @@ final class DictationController {
     }
 
     // MARK: - Helpers
+
+    /// Every second or so, transcribes the last 20 s heard so the words show up as you talk.
+    /// Only once the model is ready, one pass at a time, so it never slows the final result.
+    private func startPreview(_ capture: DictationCapture) {
+        previewTask?.cancel()
+        previewTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(900))
+                guard let self, self.phase == .listening, self.engineReady else { continue }
+                let engine = self.prepareEngine()
+                let audio = DictationAudio.trimmed(capture.snapshot(lastSeconds: 20))
+                guard audio.count > Int(PCMStore.sampleRate * 0.6),
+                      let output = try? await engine.transcribe(samples: audio, onSegments: { _ in }),
+                      !Task.isCancelled, self.phase == .listening else { continue }
+                let text = DictationText.finalize(output.segments, vocabulary: [])
+                if !text.isEmpty { self.preview = text }
+            }
+        }
+    }
 
     private func push(_ level: Double) {
         guard phase == .listening else { return }

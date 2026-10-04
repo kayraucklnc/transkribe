@@ -27,6 +27,14 @@ public final class DictationCapture: @unchecked Sendable {
         isRunning = true
     }
 
+    /// What has been heard so far, while still listening (for a live preview).
+    public func snapshot(lastSeconds: Double) -> [Float] {
+        lock.withLock {
+            let count = Int(lastSeconds * PCMStore.sampleRate)
+            return samples.count > count ? Array(samples.suffix(count)) : samples
+        }
+    }
+
     /// Stops listening and hands back everything heard.
     public func stop() -> [Float] {
         if isRunning {
