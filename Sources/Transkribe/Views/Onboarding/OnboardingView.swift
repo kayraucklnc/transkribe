@@ -15,7 +15,7 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            Surface.window.ignoresSafeArea()
+            Stage.canvas.ignoresSafeArea()
             VStack(spacing: 0) {
                 if step != .welcome {
                     StepDots(step: step)

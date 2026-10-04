@@ -17,12 +17,12 @@ struct ConversationGroup: View {
                 ForEach(Array(transcripts.enumerated()), id: \.element.id) { index, transcript in
                     ConversationRow(transcript: transcript, activity: model.activity[transcript.id])
                     if index < transcripts.count - 1 {
-                        Rectangle().fill(Surface.separator).frame(height: 0.5).padding(.leading, 62)
+                        Rectangle().fill(Stage.hairline).frame(height: 0.5).padding(.leading, 62)
                     }
                 }
             }
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Surface.raised))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Surface.separator, lineWidth: 0.5))
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Stage.card))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Stage.hairline, lineWidth: 0.5))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
@@ -88,7 +88,9 @@ struct ConversationRow: View {
         }
     }
 
-    private var snippet: String {
+    private var snippet: String { Self.snippet(for: transcript) }
+
+    static func snippet(for transcript: Transcript) -> String {
         if let summary = transcript.summary {
             let line = summary.markdown.components(separatedBy: .newlines)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -135,7 +137,7 @@ struct SpeechShape: View {
     }
 }
 
-private struct RowMenu: View {
+struct RowMenu: View {
     let transcript: Transcript
     @Environment(AppModel.self) private var model
 

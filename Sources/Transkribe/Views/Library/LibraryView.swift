@@ -1,7 +1,7 @@
 import SwiftUI
 import TranskribeCore
 
-/// Home: three ways to start, a question box, the people you talk with, and every conversation.
+/// Home: a stage with one obvious thing to do (record), then everything you've captured.
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
     @State private var isSearching = false
@@ -12,9 +12,10 @@ struct LibraryView: View {
         @Bindable var model = model
         let isQuerying = !model.query.trimmingCharacters(in: .whitespaces).isEmpty
         ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
-                Header()
+            VStack(alignment: .leading, spacing: 0) {
                 if isQuerying {
+                    Header()
+                        .padding(.bottom, 24)
                     let results = model.filteredTranscripts
                     if results.isEmpty {
                         ContentUnavailableView.search(text: model.query)
@@ -24,38 +25,48 @@ struct LibraryView: View {
                         SearchResults(transcripts: results, query: model.query)
                     }
                 } else {
-                    HomeActions()
+                    Hero()
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 8)
                     if !model.transcripts.isEmpty {
-                        LibraryAskBar(isPresented: $isAsking, question: $askQuestion)
+                        AskBar(isPresented: $isAsking)
+                            .frame(maxWidth: 620)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 40)
+                        SectionTitle("Recent")
+                            .padding(.top, 54)
+                        RecentCards(transcripts: Array(model.transcripts.prefix(8)))
+                    } else {
+                        EmptyLibrary()
+                            .padding(.top, 50)
                     }
                     if !model.people.isEmpty {
+                        SectionTitle("People")
+                            .padding(.top, 34)
                         PeopleStrip()
+                            .padding(.top, 14)
                     }
-                    if model.transcripts.isEmpty {
-                        EmptyLibrary()
-                    } else {
-                        ForEach(DateSection.group(model.transcripts), id: \.title) { section in
-                            ConversationGroup(title: section.title, transcripts: section.transcripts)
+                    if model.transcripts.count > 1 {
+                        SectionTitle("All Conversations")
+                            .padding(.top, 40)
+                        VStack(alignment: .leading, spacing: 22) {
+                            ForEach(DateSection.group(model.transcripts), id: \.title) { section in
+                                ConversationGroup(title: section.title, transcripts: section.transcripts)
+                            }
                         }
+                        .padding(.top, 14)
                     }
                 }
             }
-            .padding(.horizontal, 40)
-            .padding(.top, 28)
-            .padding(.bottom, 60)
-            .frame(maxWidth: 900)
+            .padding(.horizontal, 44)
+            .padding(.top, 20)
+            .padding(.bottom, 70)
+            .frame(maxWidth: 980)
             .frame(maxWidth: .infinity)
         }
-        .background(Surface.window)
+        .background(Stage.canvas)
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .searchable(text: $model.query, isPresented: $isSearching, placement: .toolbar, prompt: "Search Conversations")
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Button { FileImport.presentOpenPanel(model: model) } label: {
-                    Label("Transcribe a File", systemImage: "square.and.arrow.down")
-                }
-                .help("Transcribe an audio or video file (⌘O)")
-            }
-        }
         .sheet(isPresented: $isAsking) {
             LibraryChatView(question: $askQuestion)
         }
@@ -64,6 +75,17 @@ struct LibraryView: View {
                 .keyboardShortcut("f")
                 .hidden()
         }
+    }
+}
+
+private struct SectionTitle: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 22, weight: .bold))
+            .tracking(-0.4)
     }
 }
 
@@ -105,7 +127,7 @@ private struct EmptyLibrary: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Surface.separator, style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Stage.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
     }
 }
 

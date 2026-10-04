@@ -71,7 +71,7 @@ struct PersonView: View {
             .frame(maxWidth: 900)
             .frame(maxWidth: .infinity)
         }
-        .background(Surface.window)
+        .background(Stage.canvas)
         .navigationTitle("")
         .toolbar {
             ToolbarItem(placement: .navigation) {

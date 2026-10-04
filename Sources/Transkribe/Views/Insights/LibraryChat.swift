@@ -1,37 +1,6 @@
 import SwiftUI
 import TranskribeCore
 
-/// The question box on Home: ask anything across every conversation.
-struct LibraryAskBar: View {
-    @Binding var isPresented: Bool
-    @Binding var question: String
-    @State private var isHovered = false
-
-    var body: some View {
-        Button { isPresented = true } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "sparkle.magnifyingglass")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Text("Ask about your conversations")
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Keycap(text: "⌘K")
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 38)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isHovered ? Color.primary.opacity(0.05) : Surface.raised))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Surface.separator, lineWidth: 0.5))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .keyboardShortcut("k")
-        .help("Ask questions that span every conversation, like “What did Hakan say about the price?”")
-    }
-}
-
 /// A chat with the whole library. The model searches and reads conversations itself;
 /// each lookup shows up as a small chip so it's clear where an answer comes from.
 struct LibraryChatView: View {
@@ -72,7 +41,7 @@ struct LibraryChatView: View {
             }
         }
         .frame(minWidth: 620, idealWidth: 680, minHeight: 560, idealHeight: 720)
-        .background(Surface.window)
+        .background(Stage.canvas)
         .onAppear {
             focused = true
             if !question.trimmingCharacters(in: .whitespaces).isEmpty { send(question) }
