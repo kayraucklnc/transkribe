@@ -22,6 +22,15 @@ import Testing
         #expect(labeled.map(\.speaker) == [SpeakerID.me, SpeakerID.firstInRoom, SpeakerID.me])
     }
 
+    @Test func theCallLeakingIntoTheMicIsNotSomeoneInTheRoom() {
+        // "Speaker 3" on the mic only talks while the call is talking: it's the speakers' sound.
+        let turns = [SpeakerTurn(start: 0, end: 60, speaker: 1), SpeakerTurn(start: 60, end: 100, speaker: 3),
+                     SpeakerTurn(start: 100, end: 160, speaker: 1)]
+        let call = [(start: 58.0, end: 101.0)]
+        let labeled = MicSpeakers.labelWithCall([segment(0, 60), segment(62, 64, "Evet."), segment(100, 160)], turns: turns, callSpeech: call)
+        #expect(labeled.allSatisfy { $0.speaker == SpeakerID.me })
+    }
+
     @Test func briefStrayVoicesStayMe() {
         // 6 s out of 126 s: a phantom split or a cough, not another person.
         let turns = [SpeakerTurn(start: 0, end: 60, speaker: 1), SpeakerTurn(start: 60, end: 66, speaker: 3),

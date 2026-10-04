@@ -56,3 +56,27 @@ struct MeaningSearchDemoTests {
         #expect(terms.count > 1)
     }
 }
+
+/// Runs mic speaker detection on a real Mic + System recording: TRANSKRIBE_MIC_DIR=/path/to/recording-folder
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["TRANSKRIBE_MIC_DIR"] != nil))
+struct MicSpeakersDemoTests {
+    @Test func separateVoicesOnARealMicrophone() async throws {
+        let folder = URL(fileURLWithPath: ProcessInfo.processInfo.environment["TRANSKRIBE_MIC_DIR"]!)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let transcript = try decoder.decode(Transcript.self, from: Data(contentsOf: folder.appendingPathComponent("transcript.json")))
+        let mic = try #require(transcript.tracks.first { $0.source == .microphone })
+        let samples = try await AudioDecoder.decode(url: folder.appendingPathComponent(mic.fileName))
+        let turns = try await DiarizationEngine().turns(samples: samples)
+        let talk = turns.reduce(into: [Int: Double]()) { $0[$1.speaker, default: 0] += $1.end - $1.start }
+        print("MIC TALK", talk.mapValues { Int($0) })
+        let micLines = transcript.segments.filter { $0.speaker == SpeakerID.me }.map {
+            RawSegment(start: $0.start - mic.offset, end: $0.end - mic.offset, text: $0.text, words: [])
+        }
+        let call = transcript.segments.filter { !SpeakerID.isOnMicrophone($0.speaker) }.map { (start: $0.start - mic.offset, end: $0.end - mic.offset) }
+        let labeled = MicSpeakers.labelWithCall(micLines, turns: turns, callSpeech: call)
+        let counts = labeled.reduce(into: [Int: Int]()) { $0[$1.speaker ?? -1, default: 0] += 1 }
+        print("MIC LABELS", counts)
+        for line in labeled where line.speaker != SpeakerID.me { print("ROOM", line.text) }
+    }
+}

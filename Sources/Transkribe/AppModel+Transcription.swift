@@ -139,8 +139,9 @@ extension AppModel {
         guard let current = self.transcript(id) else { return }
         let offsets = sources.map { pair in current.tracks.first { $0.fileName == pair.0.fileName }?.offset ?? pair.0.offset }
         let withCall = sources.contains { $0.0.source == .system }
+        let callSpeech = Self.callSpeech(sources: sources.map(\.0), offsets: offsets, segments: sources.indices.map { results[$0]!.segments })
         var labeled = sources.indices.map {
-            Self.label(results[$0]!.segments, track: sources[$0].0, turns: results[$0]!.turns, withCall: withCall)
+            Self.label(results[$0]!.segments, track: sources[$0].0, turns: results[$0]!.turns, withCall: withCall, callSpeech: callSpeech)
         }
         if let mic = sources.firstIndex(where: { $0.0.source == .microphone }),
            let system = sources.firstIndex(where: { $0.0.source == .system }) {
@@ -173,8 +174,11 @@ extension AppModel {
     private func pipelineDidUpdate(id: Transcript.ID, track: AudioTrack, index: Int, update progressUpdate: TrackTranscriber.Progress,
                                    progress: PipelineProgress, isLive: Bool) {
         guard let transcript = self.transcript(id) else { return }
+        // Live: the call side's lines so far (already merged on the shared clock).
+        let callSpeech = transcript.segments.filter { !SpeakerID.isOnMicrophone($0.speaker) }
+            .map { (start: $0.start - track.offset, end: $0.end - track.offset) }
         let labeled = Self.label(progressUpdate.committed + progressUpdate.pending, track: track, turns: progressUpdate.turns,
-                                 withCall: transcript.tracks.contains { $0.source == .system })
+                                 withCall: transcript.tracks.contains { $0.source == .system }, callSpeech: callSpeech)
         progress.tracks[index] = TrackMerger.Track(source: track.source, offset: track.offset, segments: labeled)
         // Count text still being decoded too: a whole file can be a single window, and progress
         // must move while it's being worked on, not jump from 0 to 100.
@@ -220,9 +224,19 @@ extension AppModel {
 
     /// On the microphone, the main voice is "Me" and anyone else in the room keeps their own
     /// label; the call side and imported files use speaker detection as is.
-    static func label(_ segments: [RawSegment], track: AudioTrack, turns: [SpeakerTurn], withCall: Bool) -> [RawSegment] {
+    static func label(_ segments: [RawSegment], track: AudioTrack, turns: [SpeakerTurn], withCall: Bool,
+                      callSpeech: [(start: TimeInterval, end: TimeInterval)] = []) -> [RawSegment] {
         guard track.source == .microphone else { return SpeakerAssigner.assign(segments, turns: turns) }
-        return withCall ? MicSpeakers.labelWithCall(segments, turns: turns) : MicSpeakers.labelAlone(segments, turns: turns)
+        return withCall ? MicSpeakers.labelWithCall(segments, turns: turns, callSpeech: callSpeech)
+                        : MicSpeakers.labelAlone(segments, turns: turns)
+    }
+
+    /// When the call side was talking, on the microphone track's clock.
+    static func callSpeech(sources: [AudioTrack], offsets: [TimeInterval], segments: [[RawSegment]]) -> [(start: TimeInterval, end: TimeInterval)] {
+        guard let mic = sources.firstIndex(where: { $0.source == .microphone }),
+              let system = sources.firstIndex(where: { $0.source == .system }) else { return [] }
+        let shift = offsets[system] - offsets[mic]
+        return segments[system].map { (start: $0.start + shift, end: $0.end + shift) }
     }
 
     private func relabelSpeakers(in transcript: Transcript, speakerCount: Int?) async throws -> [Segment] {
