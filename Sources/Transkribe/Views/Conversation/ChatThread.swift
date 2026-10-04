@@ -209,7 +209,8 @@ private struct ThreadStatus: View {
                 WorkingCard(title: "Transcribing", subtitle: timeLeft(progress), progress: progress)
                     .padding(.bottom, 20)
             case (_, .paused(let reason)?):
-                WorkingCard(title: "Paused for now", subtitle: "\(reason). Picks up right where it left off.", progress: nil)
+                WorkingCard(title: "Paused for now", subtitle: "\(reason). Picks up right where it left off.", progress: nil,
+                            action: reason.contains("hot") ? nil : ("Continue Anyway", { ResourceGovernor.continuesAnyway = true }))
                     .padding(.bottom, 20)
             case (_, .identifyingSpeakers?):
                 WorkingCard(title: "Identifying speakers", subtitle: "Working out who said what", progress: nil)

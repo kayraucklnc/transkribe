@@ -7,6 +7,8 @@ struct WorkingCard: View {
     let subtitle: String?
     /// nil = indeterminate.
     let progress: Double?
+    /// An optional button, e.g. "Continue Anyway" while paused.
+    var action: (title: String, run: () -> Void)?
 
     var body: some View {
         VStack(spacing: 14) {
@@ -24,6 +26,12 @@ struct WorkingCard: View {
                     }
                 }
                 Spacer()
+                if let action {
+                    Button(action.title, action: action.run)
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.record)
+                        .controlSize(.regular)
+                }
                 if let progress {
                     Text(progress.formatted(.percent.precision(.fractionLength(0))))
                         .font(.system(size: 26, weight: .semibold, design: .rounded))

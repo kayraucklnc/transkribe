@@ -16,12 +16,22 @@ public enum ResourceGovernor {
     }
 
     static let lowBattery = 0.2
+    private static let overrideLock = NSLock()
+    nonisolated(unsafe) private static var override = false
+
+    /// Set when the user chooses "Continue Anyway": battery, Low Power Mode and load no longer
+    /// pause transcription until the app quits. Heat still does, to protect the Mac.
+    public static var continuesAnyway: Bool {
+        get { overrideLock.withLock { override } }
+        set { overrideLock.withLock { override = newValue } }
+    }
     /// Other work keeping more than this share of the cores busy counts as "the Mac is busy".
     static let busyLoadPerCore = 1.2
 
     /// A short user-facing reason to wait, or nil to go ahead.
-    public static func pauseReason(for reading: Reading) -> String? {
+    public static func pauseReason(for reading: Reading, continuingAnyway: Bool = ResourceGovernor.continuesAnyway) -> String? {
         if reading.thermal == .serious || reading.thermal == .critical { return "Your Mac is running hot" }
+        if continuingAnyway { return nil }
         if reading.lowPowerMode { return "Low Power Mode is on" }
         if let level = reading.batteryLevel, level < lowBattery, !reading.isCharging { return "Battery is low" }
         if reading.loadAverage > Double(reading.cores) * busyLoadPerCore { return "Your Mac is busy" }
