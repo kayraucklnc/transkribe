@@ -16,81 +16,62 @@ struct PersonView: View {
         let conversations = model.conversations(with: person.id)
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
-                HStack(alignment: .center, spacing: 22) {
-                    PersonAvatar(initials: person.initials, seed: person.name, size: 92)
-                        .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(person.name).font(.system(size: 34, weight: .bold, design: .rounded))
+                HStack(alignment: .center, spacing: 18) {
+                    PersonAvatar(initials: person.initials, seed: person.name, size: 64)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(person.name).font(.system(size: 26, weight: .bold))
+                        Text(summaryLine(conversations))
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
                         if !person.emails.isEmpty {
-                            HStack(spacing: 10) {
+                            HStack(spacing: 12) {
                                 ForEach(person.emails, id: \.self) { email in
-                                    Link(destination: URL(string: "mailto:\(email)")!) {
-                                        Label(email, systemImage: "envelope")
-                                    }
-                                    .font(.callout)
+                                    Link(email, destination: URL(string: "mailto:\(email)")!)
+                                        .font(.system(size: 13))
                                 }
                             }
                         }
-                        Text(summaryLine(conversations))
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 10) {
+                }
+                HStack(spacing: 10) {
+                    Button {
+                        model.recordFollowUp(of: conversations.first, with: person.id)
+                    } label: {
+                        Label("Record with \(firstName)", systemImage: "record.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.record)
+                    .help("Record a conversation with \(person.name); it joins your ongoing conversation")
+                    if !conversations.isEmpty {
                         Button {
-                            model.recordFollowUp(of: conversations.first, with: person.id)
+                            ai.clearLibraryChat()
+                            isAsking = true
                         } label: {
-                            Label("Talk to \(person.name.split(separator: " ").first.map(String.init) ?? person.name)", systemImage: "record.circle")
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 18)
-                                .padding(.vertical, 10)
-                                .background(Theme.record.gradient, in: Capsule())
+                            Label("Ask about \(firstName)", systemImage: "sparkle.magnifyingglass")
                         }
-                        .buttonStyle(.plain)
-                        .help("Record a conversation with \(person.name); it joins your ongoing conversation")
-                        if !conversations.isEmpty {
-                            Button {
-                                ai.clearLibraryChat()
-                                isAsking = true
-                            } label: {
-                                Label("Ask about \(person.name.split(separator: " ").first.map(String.init) ?? person.name)", systemImage: "sparkles")
-                                    .font(.callout.weight(.medium))
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .glassBackground(in: Capsule(), interactive: true)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Ask questions about everything you've talked about with \(person.name)")
-                        }
-                        Button("Edit") {
-                            name = person.name
-                            emails = person.emails.joined(separator: ", ")
-                            isEditing = true
-                        }
-                        .buttonStyle(.borderless)
+                        .help("Ask questions about everything you've talked about with \(person.name)")
+                    }
+                    Button("Edit") {
+                        name = person.name
+                        emails = person.emails.joined(separator: ", ")
+                        isEditing = true
                     }
                 }
+                .controlSize(.large)
                 if conversations.isEmpty {
                     Text("No conversations yet. Link a voice to \(person.name) from any conversation, or record one now.")
                         .foregroundStyle(.secondary)
                 } else {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("CONVERSATIONS").font(.caption.weight(.semibold)).tracking(0.8).foregroundStyle(.secondary)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280, maximum: 420), spacing: 18)], spacing: 18) {
-                            ForEach(conversations) { transcript in
-                                ConversationCard(transcript: transcript, activity: model.activity[transcript.id])
-                            }
-                        }
-                    }
+                    ConversationGroup(title: "Conversations", transcripts: conversations)
                 }
             }
-            .padding(.horizontal, 48)
-            .padding(.vertical, 36)
-            .frame(maxWidth: 1240)
+            .padding(.horizontal, 40)
+            .padding(.vertical, 28)
+            .frame(maxWidth: 900)
             .frame(maxWidth: .infinity)
         }
-        .background(AmbientBackground())
+        .background(Surface.window)
         .navigationTitle("")
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -133,6 +114,8 @@ struct PersonView: View {
         }
     }
 
+    private var firstName: String { person.name.split(separator: " ").first.map(String.init) ?? person.name }
+
     private func summaryLine(_ conversations: [Transcript]) -> String {
         guard let latest = conversations.first else { return "No conversations yet" }
         let total = conversations.reduce(0) { $0 + $1.duration }
@@ -148,7 +131,10 @@ struct PeopleStrip: View {
     var body: some View {
         let people = model.people.sorted { model.conversations(with: $0.id).first?.createdAt ?? .distantPast > model.conversations(with: $1.id).first?.createdAt ?? .distantPast }
         VStack(alignment: .leading, spacing: 14) {
-            Text("PEOPLE").font(.caption.weight(.semibold)).tracking(0.8).foregroundStyle(.secondary)
+            Text("People")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 18) {
                     ForEach(people) { person in
@@ -156,16 +142,12 @@ struct PeopleStrip: View {
                             withAnimation(Theme.spring) { model.selectedPerson = person.id }
                         } label: {
                             VStack(spacing: 8) {
-                                PersonAvatar(initials: person.initials, seed: person.name, size: 58)
-                                    .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
+                                PersonAvatar(initials: person.initials, seed: person.name, size: 46)
                                 Text(person.name.split(separator: " ").first.map(String.init) ?? person.name)
-                                    .font(.callout.weight(.medium))
+                                    .font(.system(size: 12))
                                     .lineLimit(1)
-                                Text("\(model.conversations(with: person.id).count)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
                             }
-                            .frame(width: 76)
+                            .frame(width: 64)
                         }
                         .buttonStyle(.plain)
                         .contextMenu {

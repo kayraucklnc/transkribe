@@ -402,11 +402,11 @@ struct AssistantBubble<Content: View>: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.white)
+            Image(systemName: "sparkle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
                 .frame(width: 24, height: 24)
-                .background(LinearGradient(colors: [.purple, .accentColor], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
+                .background(Color.primary.opacity(0.07), in: Circle())
             content
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)

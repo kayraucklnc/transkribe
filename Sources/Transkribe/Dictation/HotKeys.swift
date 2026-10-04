@@ -50,33 +50,3 @@ final class HotKeys {
         }, 1, &spec, nil, nil)
     }
 }
-
-/// The shortcut that opens dictation, picked in Settings.
-enum DictationShortcut: String, CaseIterable, Identifiable, Codable {
-    case optionSpace
-    case controlOptionSpace
-    case commandShiftSpace
-    case off
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .optionSpace: "⌥ Space"
-        case .controlOptionSpace: "⌃⌥ Space"
-        case .commandShiftSpace: "⇧⌘ Space"
-        case .off: "Off"
-        }
-    }
-
-    var modifiers: Int? {
-        switch self {
-        case .optionSpace: optionKey
-        case .controlOptionSpace: optionKey | controlKey
-        case .commandShiftSpace: cmdKey | shiftKey
-        case .off: nil
-        }
-    }
-
-    static let keyCode = kVK_Space
-}

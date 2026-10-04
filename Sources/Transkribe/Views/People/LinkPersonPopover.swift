@@ -107,6 +107,11 @@ struct LinkPersonPopover: View {
 
 /// A person's avatar: initials on a color derived from their name.
 struct PersonAvatar: View {
+    /// `hashValue` changes every launch; this keeps a person's color the same forever.
+    private var stableIndex: Int {
+        seed.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF } % Theme.speakerColors.count
+    }
+
     let initials: String
     let seed: String
     var size: CGFloat = 32
@@ -117,7 +122,7 @@ struct PersonAvatar: View {
             .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
-            .background(Theme.speakerColors[abs(seed.hashValue) % Theme.speakerColors.count].gradient, in: Circle())
+            .background(Theme.speakerColors[stableIndex], in: Circle())
             .overlay(alignment: .bottomTrailing) {
                 if fromContacts {
                     Image(systemName: "person.crop.circle.fill")

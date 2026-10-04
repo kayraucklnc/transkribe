@@ -67,11 +67,8 @@ private struct DictationSettingsTab: View {
                     HStack {
                         Text("Shortcut")
                         Spacer()
-                        Picker("Shortcut", selection: $dictation.shortcut) {
-                            ForEach(DictationShortcut.allCases) { Text($0.label).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(width: 140)
+                        ShortcutRecorder(shortcut: $dictation.shortcut,
+                                         onBegin: dictation.suspendShortcut, onEnd: dictation.installShortcut)
                     }
                     if !dictation.shortcutIsAvailable {
                         Label("Another app is using this shortcut. Pick a different one.", systemImage: "exclamationmark.triangle.fill")

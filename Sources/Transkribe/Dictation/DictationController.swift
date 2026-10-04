@@ -31,9 +31,14 @@ final class DictationController {
         didSet { UserDefaults.standard.set(speed.rawValue, forKey: Self.speedKey) }
     }
 
-    var shortcut: DictationShortcut {
+    /// Any key combination the user records; nil turns the shortcut off.
+    var shortcut: KeyCombo? {
         didSet {
-            UserDefaults.standard.set(shortcut.rawValue, forKey: Self.shortcutKey)
+            if let shortcut, let data = try? JSONEncoder().encode(shortcut) {
+                UserDefaults.standard.set(data, forKey: Self.shortcutKey)
+            } else {
+                UserDefaults.standard.set(Data(), forKey: Self.shortcutKey)
+            }
             installShortcut()
         }
     }
@@ -43,7 +48,7 @@ final class DictationController {
 
     static let historyLength = 24
     private static let speedKey = "dictationSpeed"
-    private static let shortcutKey = "dictationShortcut"
+    private static let shortcutKey = "dictationKeyCombo"
     private static let usesKey = "dictationUses"
     private static let minimumSamples = Int(PCMStore.sampleRate * 0.3)
     private static let maximumDuration: Duration = .seconds(600)
@@ -61,19 +66,30 @@ final class DictationController {
     init(model: AppModel) {
         self.model = model
         speed = UserDefaults.standard.string(forKey: Self.speedKey).flatMap(DictationSpeed.init) ?? .balanced
-        shortcut = UserDefaults.standard.string(forKey: Self.shortcutKey).flatMap(DictationShortcut.init) ?? .optionSpace
+        shortcut = Self.savedShortcut()
     }
 
     // MARK: - Shortcut
 
+    private static func savedShortcut() -> KeyCombo? {
+        guard let data = UserDefaults.standard.data(forKey: shortcutKey) else { return .optionSpace }
+        return data.isEmpty ? nil : (try? JSONDecoder().decode(KeyCombo.self, from: data)) ?? .optionSpace
+    }
+
+    /// Stops the shortcut firing while a new one is being recorded.
+    func suspendShortcut() {
+        HotKeys.shared.unregister(shortcutToken)
+        shortcutToken = nil
+    }
+
     func installShortcut() {
         HotKeys.shared.unregister(shortcutToken)
         shortcutToken = nil
-        guard let modifiers = shortcut.modifiers else {
+        guard let shortcut else {
             shortcutIsAvailable = true
             return
         }
-        shortcutToken = HotKeys.shared.register(keyCode: DictationShortcut.keyCode, modifiers: modifiers) { [weak self] in
+        shortcutToken = HotKeys.shared.register(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers) { [weak self] in
             self?.toggle()
         }
         shortcutIsAvailable = shortcutToken != nil

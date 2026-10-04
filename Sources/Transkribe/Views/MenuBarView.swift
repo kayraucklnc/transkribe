@@ -43,8 +43,8 @@ struct MenuBarView: View {
                 HStack {
                     Label("Dictate", systemImage: "mic")
                     Spacer()
-                    if dictation.shortcut != .off {
-                        Text(dictation.shortcut.label).foregroundStyle(.secondary)
+                    if let shortcut = dictation.shortcut {
+                        Text(shortcut.display).foregroundStyle(.secondary)
                     }
                 }
                 .contentShape(Rectangle())

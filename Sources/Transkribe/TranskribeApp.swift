@@ -9,6 +9,7 @@ struct TranskribeApp: App {
     var body: some Scene {
         Window("Transkribe", id: "main") {
             RootView()
+                .environment(delegate.dictation)
                 .environment(delegate.model)
                 .environment(delegate.player)
                 .environment(delegate.ai)

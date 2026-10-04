@@ -84,3 +84,26 @@ import Testing
         #expect(heights.allSatisfy { $0 == 0 })
     }
 }
+
+@Suite struct KeyComboTests {
+    @Test func displaysModifiersInMacOrder() {
+        let combo = KeyCombo(keyCode: 49, modifiers: KeyCombo.command | KeyCombo.shift | KeyCombo.control | KeyCombo.option)
+        #expect(combo.display == "⌃⌥⇧⌘ Space")
+        #expect(KeyCombo(keyCode: 2, modifiers: KeyCombo.option, character: "d").display == "⌥D")
+        #expect(KeyCombo(keyCode: 96, modifiers: 0).display == "F5")
+    }
+
+    @Test func needsAModifierUnlessItIsAFunctionKey() {
+        #expect(!KeyCombo(keyCode: 2, modifiers: 0, character: "d").isValid)
+        #expect(!KeyCombo(keyCode: 49, modifiers: 0).isValid)
+        #expect(!KeyCombo(keyCode: 49, modifiers: KeyCombo.shift).isValid)
+        #expect(KeyCombo(keyCode: 49, modifiers: KeyCombo.option).isValid)
+        #expect(KeyCombo(keyCode: 111, modifiers: 0).isValid) // F12
+    }
+
+    @Test func roundTripsThroughJSON() throws {
+        let combo = KeyCombo(keyCode: 2, modifiers: KeyCombo.control | KeyCombo.option, character: "d")
+        let decoded = try JSONDecoder().decode(KeyCombo.self, from: JSONEncoder().encode(combo))
+        #expect(decoded == combo)
+    }
+}
