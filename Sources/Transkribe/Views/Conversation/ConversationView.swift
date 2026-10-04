@@ -102,6 +102,13 @@ struct ConversationView: View {
             .help("Record the next part of this conversation")
             .disabled(model.isRecording || isLive)
 
+            ShareLink(item: DocumentExport.markdown(transcript, people: model.people),
+                      subject: Text(transcript.title), preview: SharePreview(transcript.title)) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            .help("Share the conversation as a document")
+            .disabled(transcript.segments.isEmpty)
+
             Button {
                 model.copyText(of: transcript.id)
             } label: {
@@ -112,8 +119,9 @@ struct ConversationView: View {
 
             Menu {
                 Section("Export") {
-                    Button("Text") { export(.plainText) }
-                    Button("Markdown") { export(.markdown) }
+                    Button("PDF Document") { export(.pdf) }
+                    Button("Markdown Document") { export(.markdown) }
+                    Button("Plain Text") { export(.plainText) }
                     Button("Subtitles (SRT)") { export(.srt) }
                 }
                 Section("Conversation") {
@@ -145,20 +153,26 @@ struct ConversationView: View {
     }
 
     private enum ExportFormat: String {
-        case plainText = "txt", markdown = "md", srt
+        case plainText = "txt", markdown = "md", srt, pdf
     }
 
     private func export(_ format: ExportFormat) {
         let text = switch format {
         case .plainText: TranscriptFormatter.plainText(transcript)
-        case .markdown: TranscriptFormatter.markdown(transcript)
+        case .markdown: DocumentExport.markdown(transcript, people: model.people)
         case .srt: TranscriptFormatter.srt(transcript)
+        case .pdf: ""
         }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "\(transcript.title).\(format.rawValue)"
         panel.allowedContentTypes = [UTType(filenameExtension: format.rawValue) ?? .plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
+            if format == .pdf {
+                try PDFExport.write(html: DocumentExport.html(transcript, people: model.people), to: url)
+                model.showToast("Exported")
+                return
+            }
             try text.write(to: url, atomically: true, encoding: .utf8)
             model.showToast("Exported")
         } catch {
