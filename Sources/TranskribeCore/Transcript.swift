@@ -113,6 +113,8 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var status: TranscriptStatus
     /// Names the user gave to speakers. Unnamed speakers get a default name.
     public var speakerNames: [Int: String]
+    /// Which speaker is the user ("me"), shown on the right like a sent message.
+    public var meSpeaker: Int?
 
     public init(
         id: UUID = UUID(),
@@ -137,7 +139,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, createdAt, duration, language, tracks, segments, status, speakerNames
+        case id, title, createdAt, duration, language, tracks, segments, status, speakerNames, meSpeaker
     }
 
     public init(from decoder: Decoder) throws {
@@ -151,6 +153,12 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
         segments = try container.decode([Segment].self, forKey: .segments)
         status = try container.decode(TranscriptStatus.self, forKey: .status)
         speakerNames = try container.decodeIfPresent([Int: String].self, forKey: .speakerNames) ?? [:]
+        meSpeaker = try container.decodeIfPresent(Int.self, forKey: .meSpeaker)
+    }
+
+    /// The user's own speaker: their explicit choice, or the microphone track of a Mic + System recording.
+    public var resolvedMeSpeaker: Int? {
+        meSpeaker ?? (tracks.contains { $0.source == .microphone } && speakers.contains(SpeakerID.me) ? SpeakerID.me : nil)
     }
 
     /// Speakers in order of first appearance.
@@ -166,6 +174,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     public func name(of speaker: Int) -> String {
         if let name = speakerNames[speaker], !name.isEmpty { return name }
+        if speaker == meSpeaker { return "Me" }
         return speaker == SpeakerID.me ? "Me" : "Speaker \(speaker)"
     }
 

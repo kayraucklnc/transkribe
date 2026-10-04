@@ -1,81 +1,6 @@
 import SwiftUI
 import TranskribeCore
 
-/// The first thing you see: one big button. Everything else is optional.
-struct HomeView: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 40)
-            RecordButton(size: 132)
-                .padding(.bottom, 30)
-            Group {
-                if case .recording(let since) = model.recordingState {
-                    recordingDetails(since: since)
-                } else {
-                    idleDetails
-                }
-            }
-            .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            Spacer(minLength: 40)
-            footer
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(Theme.spring, value: model.recordingState)
-    }
-
-    private var idleDetails: some View {
-        VStack(spacing: 22) {
-            VStack(spacing: 6) {
-                Text(model.recordingState == .stopping ? "Saving…" : "Start recording")
-                    .font(.system(size: 22, weight: .semibold, design: .rounded))
-                Text(caption)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 340)
-                    .contentTransition(.opacity)
-            }
-            SourcePicker()
-                .disabled(model.isRecording)
-        }
-    }
-
-    private func recordingDetails(since: Date) -> some View {
-        VStack(spacing: 18) {
-            ElapsedTime(since: since)
-                .font(.system(size: 46, weight: .light, design: .rounded))
-                .monospacedDigit()
-            WaveformView(levels: model.levels)
-                .frame(width: 300, height: 54)
-            Label(model.recordingSource.recordingDescription, systemImage: model.recordingSource.symbol)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var footer: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "arrow.down.doc")
-            Text("Drop audio or video anywhere to transcribe it.")
-            Button("Choose File…") { FileImport.presentOpenPanel(model: model) }
-                .buttonStyle(.link)
-        }
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .padding(.bottom, 26)
-    }
-
-    private var caption: String {
-        switch model.recordingSource {
-        case .microphone: "Your microphone. Great for in-person conversations and notes."
-        case .system: "Everything your Mac plays: calls, meetings, videos."
-        case .both: "You and the other side of a call, each labeled."
-        }
-    }
-}
-
 extension RecordingSource {
     var shortLabel: String {
         switch self {
@@ -222,5 +147,53 @@ struct ElapsedTime: View {
             Text(TranscriptFormatter.timestamp(context.date.timeIntervalSince(since)))
                 .contentTransition(.numericText())
         }
+    }
+}
+
+/// Wraps children onto new lines like text.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(subviews: subviews, width: proposal.width ?? .infinity)
+        let height = rows.last.map { $0.y + $0.height } ?? 0
+        let width = rows.map(\.width).max() ?? 0
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let rows = arrange(subviews: subviews, width: bounds.width)
+        for row in rows {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: bounds.minY + row.y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+        }
+    }
+
+    private struct Row {
+        var indices: [Int] = []
+        var y: CGFloat = 0
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(subviews: Subviews, width: CGFloat) -> [Row] {
+        var rows: [Row] = [Row()]
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            if !rows[rows.count - 1].indices.isEmpty, rows[rows.count - 1].width + spacing + size.width > width {
+                let previous = rows[rows.count - 1]
+                rows.append(Row(y: previous.y + previous.height + spacing))
+            }
+            var row = rows[rows.count - 1]
+            row.width += (row.indices.isEmpty ? 0 : spacing) + size.width
+            row.height = max(row.height, size.height)
+            row.indices.append(index)
+            rows[rows.count - 1] = row
+        }
+        return rows
     }
 }

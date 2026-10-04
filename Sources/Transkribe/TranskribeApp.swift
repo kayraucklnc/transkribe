@@ -8,7 +8,7 @@ struct TranskribeApp: App {
 
     var body: some Scene {
         Window("Transkribe", id: "main") {
-            ContentView()
+            RootView()
                 .environment(delegate.model)
                 .environment(delegate.player)
                 .frame(minWidth: 760, minHeight: 520)

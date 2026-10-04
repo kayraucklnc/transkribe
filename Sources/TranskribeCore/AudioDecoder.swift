@@ -20,6 +20,19 @@ public enum AudioDecoder {
 
     /// Decodes the first audio track into 16 kHz mono Float32 samples.
     public static func decode(url: URL) async throws -> [Float] {
+        try await decode(url: url, range: nil)
+    }
+
+    /// Decodes only `start..<end` seconds, so hours-long files can be processed in slices.
+    public static func decode(url: URL, from start: TimeInterval, to end: TimeInterval) async throws -> [Float] {
+        let range = CMTimeRange(
+            start: CMTime(seconds: start, preferredTimescale: 48_000),
+            end: CMTime(seconds: end, preferredTimescale: 48_000)
+        )
+        return try await decode(url: url, range: range)
+    }
+
+    private static func decode(url: URL, range: CMTimeRange?) async throws -> [Float] {
         let asset = AVURLAsset(url: url)
         let track = try await firstAudioTrack(of: asset)
         let reader: AVAssetReader
@@ -28,6 +41,7 @@ public enum AudioDecoder {
         } catch {
             throw DecodeError.readFailed(error.localizedDescription)
         }
+        if let range { reader.timeRange = range }
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVSampleRateKey: sampleRate,

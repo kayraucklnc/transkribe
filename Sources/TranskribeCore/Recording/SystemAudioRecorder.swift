@@ -13,6 +13,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
 
     func start(
         to url: URL,
+        liveCopy: URL?,
         onLevel: @escaping @Sendable (Float) -> Void,
         onFailure: @escaping @Sendable (Error) -> Void
     ) async throws {
@@ -35,7 +36,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         configuration.height = 2
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
 
-        writer = try AudioFileWriter(url: url, sampleRate: Double(Self.sampleRate))
+        writer = try AudioFileWriter(url: url, sampleRate: Double(Self.sampleRate), liveCopy: liveCopy)
         self.onLevel = onLevel
         let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)

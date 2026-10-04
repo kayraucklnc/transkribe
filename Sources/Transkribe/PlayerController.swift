@@ -46,6 +46,12 @@ final class PlayerController {
         player.replaceCurrentItem(with: AVPlayerItem(asset: composition))
     }
 
+    /// Loads again even if this transcript is already loaded (e.g. a recording just finished).
+    func reload(_ transcript: Transcript, store: TranscriptStore) async {
+        loadedID = nil
+        await load(transcript, store: store)
+    }
+
     func togglePlayback() {
         if isPlaying {
             player.pause()

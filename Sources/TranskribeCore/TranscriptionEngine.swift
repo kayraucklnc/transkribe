@@ -22,6 +22,8 @@ public actor TranscriptionEngine {
     private let modelsDirectory: URL
     private var loaded: LoadedModel?
     private var preparing: Task<LoadedModel, Error>?
+    private var isRunning = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
 
     public init(model: String = TranscriptionEngine.defaultModel, modelsDirectory: URL = TranscriptionEngine.defaultModelsDirectory) {
         self.model = model
@@ -79,6 +81,33 @@ public actor TranscriptionEngine {
         samples: [Float],
         onSegments: @escaping @Sendable ([RawSegment]) -> Void = { _ in }
     ) async throws -> Output {
+        // The actor can interleave at `await`s; WhisperKit must only run one job at a time
+        // (a live recording and the import queue may both be transcribing).
+        await acquire()
+        defer { release() }
+        return try await runTranscription(samples: samples, onSegments: onSegments)
+    }
+
+    private func acquire() async {
+        guard isRunning else {
+            isRunning = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    private func release() {
+        if waiters.isEmpty {
+            isRunning = false
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+
+    private func runTranscription(
+        samples: [Float],
+        onSegments: @escaping @Sendable ([RawSegment]) -> Void
+    ) async throws -> Output {
         let whisper = try await model().whisper
         guard !samples.isEmpty else { return Output(segments: [], language: nil) }
 
@@ -116,7 +145,7 @@ public actor TranscriptionEngine {
 
     // MARK: - Helpers
 
-    static func dominantLanguage(_ languages: [String]) -> String? {
+    public static func dominantLanguage(_ languages: [String]) -> String? {
         let counts = Dictionary(languages.filter { !$0.isEmpty }.map { ($0, 1) }, uniquingKeysWith: +)
         return counts.max { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) }?.key
     }

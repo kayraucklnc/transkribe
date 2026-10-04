@@ -8,27 +8,36 @@ import Foundation
 public actor DiarizationEngine {
     /// In automatic mode, "speakers" with less talk time than this are treated as noise.
     static let minimumShare = 0.08
+    static let variant: LSEENDVariant = .callhome
 
     private let modelsDirectory: URL
-    private var loading: Task<LoadedDiarizer, Error>?
 
     public init(modelsDirectory: URL = TranscriptionEngine.defaultModelsDirectory) {
         self.modelsDirectory = modelsDirectory
     }
 
-    /// Speaker turns for 16 kHz mono samples. Speakers are numbered from 1 in order of
-    /// first appearance. Pass `speakerCount` when the user knows how many people talked.
+    /// A streaming session: feed audio as it arrives and read turns at any time. Speaker
+    /// identities stay consistent for the whole session, however long it runs.
+    public func makeStream() async throws -> DiarizationStream {
+        let directory = modelsDirectory.appendingPathComponent("FluidAudio", isDirectory: true)
+        let model = try await LSEENDModel.loadFromHuggingFace(variant: Self.variant, stepSize: .step500ms, cacheDirectory: directory)
+        let diarizer = LSEENDDiarizer()
+        try diarizer.initialize(model: model)
+        return DiarizationStream(diarizer: diarizer)
+    }
+
+    /// Speaker turns for complete 16 kHz mono audio. Pass `speakerCount` when the user
+    /// knows how many people talked.
     public func turns(samples: [Float], speakerCount: Int? = nil) async throws -> [SpeakerTurn] {
         guard !samples.isEmpty else { return [] }
-        let diarizer = try await model().diarizer
-        let timeline = try diarizer.processComplete(samples, sourceSampleRate: AudioDecoder.sampleRate, keepingEnrolledSpeakers: false)
-        try Task.checkCancellation()
-        let raw = timeline.speakers.values.flatMap { speaker in
-            speaker.finalizedSegments.map {
-                SpeakerTurn(start: TimeInterval($0.startTime), end: TimeInterval($0.endTime), speaker: $0.speakerIndex)
-            }
+        let stream = try await makeStream()
+        let piece = Int(AudioDecoder.sampleRate) * 60
+        for start in stride(from: 0, to: samples.count, by: piece) {
+            try Task.checkCancellation()
+            try stream.append(Array(samples[start..<min(samples.count, start + piece)]))
         }
-        return Self.renumbered(Self.select(raw, speakerCount: speakerCount))
+        try stream.finish()
+        return stream.turns(speakerCount: speakerCount)
     }
 
     /// Keeps the `speakerCount` most talkative speakers, or in automatic mode everyone
@@ -62,36 +71,48 @@ public actor DiarizationEngine {
         }
     }
 
-    private static func talkTime(_ turns: [SpeakerTurn]) -> [Int: TimeInterval] {
+    static func talkTime(_ turns: [SpeakerTurn]) -> [Int: TimeInterval] {
         turns.reduce(into: [:]) { $0[$1.speaker, default: 0] += max(0, $1.end - $1.start) }
-    }
-
-    // MARK: - Model
-
-    /// Concurrent callers share one load; a failed load is retried next time.
-    private func model() async throws -> LoadedDiarizer {
-        if let loading { return try await loading.value }
-        let directory = modelsDirectory.appendingPathComponent("FluidAudio", isDirectory: true)
-        let task = Task {
-            let diarizer = LSEENDDiarizer()
-            try await diarizer.initialize(variant: .callhome, stepSize: .step500ms, cacheDirectory: directory)
-            return LoadedDiarizer(diarizer: diarizer)
-        }
-        loading = task
-        do {
-            return try await task.value
-        } catch {
-            loading = nil
-            throw error
-        }
     }
 }
 
-/// The diarizer keeps per-run state; the engine actor only ever runs one job at a time.
-private final class LoadedDiarizer: @unchecked Sendable {
-    let diarizer: LSEENDDiarizer
+/// One continuous diarization session over a single audio track.
+public final class DiarizationStream: @unchecked Sendable {
+    private let diarizer: LSEENDDiarizer
+    private let lock = NSLock()
+    private var finished = false
 
     init(diarizer: LSEENDDiarizer) {
         self.diarizer = diarizer
+    }
+
+    /// Appends the next 16 kHz mono samples (contiguous with what came before).
+    public func append(_ samples: [Float]) throws {
+        try lock.withLock {
+            guard !finished, !samples.isEmpty else { return }
+            try diarizer.addAudio(samples, sourceSampleRate: AudioDecoder.sampleRate)
+            _ = try diarizer.process()
+        }
+    }
+
+    /// Flushes the model; call once when the audio has ended.
+    public func finish() throws {
+        try lock.withLock {
+            guard !finished else { return }
+            finished = true
+            _ = try diarizer.finalizeSession()
+        }
+    }
+
+    /// Turns found so far, cleaned up and numbered 1, 2, 3… by first appearance.
+    public func turns(speakerCount: Int? = nil) -> [SpeakerTurn] {
+        let raw: [SpeakerTurn] = lock.withLock {
+            diarizer.timeline.speakers.values.flatMap { speaker in
+                speaker.finalizedSegments.map {
+                    SpeakerTurn(start: TimeInterval($0.startTime), end: TimeInterval($0.endTime), speaker: $0.speakerIndex)
+                }
+            }
+        }
+        return DiarizationEngine.renumbered(DiarizationEngine.select(raw, speakerCount: speakerCount))
     }
 }

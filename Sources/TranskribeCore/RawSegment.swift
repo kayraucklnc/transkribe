@@ -1,7 +1,7 @@
 import Foundation
 
 /// A segment as produced by the speech model, relative to the start of its own track.
-public struct RawSegment: Equatable, Sendable {
+public struct RawSegment: Codable, Equatable, Sendable {
     public var start: TimeInterval
     public var end: TimeInterval
     public var text: String
@@ -18,7 +18,7 @@ public struct RawSegment: Equatable, Sendable {
 }
 
 /// A stretch of audio where one speaker is talking, from speaker detection.
-public struct SpeakerTurn: Equatable, Sendable {
+public struct SpeakerTurn: Codable, Equatable, Sendable {
     public var start: TimeInterval
     public var end: TimeInterval
     public var speaker: Int

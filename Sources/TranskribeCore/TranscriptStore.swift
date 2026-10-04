@@ -82,6 +82,32 @@ public struct TranscriptStore: Sendable {
         return recovered
     }
 
+    // MARK: - Checkpoints
+
+    private func checkpointURL(for transcript: Transcript, track: AudioTrack) -> URL {
+        directory(for: transcript).appendingPathComponent((track.fileName as NSString).deletingPathExtension + ".progress.json")
+    }
+
+    /// Saves how far a long transcription got, so it can resume after a quit or crash.
+    public func saveCheckpoint(_ checkpoint: TrackCheckpoint, for transcript: Transcript, track: AudioTrack) throws {
+        try JSONEncoder().encode(checkpoint).write(to: checkpointURL(for: transcript, track: track), options: .atomic)
+    }
+
+    public func loadCheckpoint(for transcript: Transcript, track: AudioTrack) -> TrackCheckpoint? {
+        guard let data = try? Data(contentsOf: checkpointURL(for: transcript, track: track)) else { return nil }
+        return try? JSONDecoder().decode(TrackCheckpoint.self, from: data)
+    }
+
+    /// Removes checkpoints and live recording copies once a transcript is finished.
+    public func clearCheckpoints(for transcript: Transcript) {
+        let fm = FileManager.default
+        let folder = directory(for: transcript)
+        let leftovers = (try? fm.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in leftovers where name.hasSuffix(".progress.json") || name.hasSuffix(".live.pcm") {
+            try? fm.removeItem(at: folder.appendingPathComponent(name))
+        }
+    }
+
     public func delete(_ transcript: Transcript) throws {
         let directory = directory(for: transcript)
         guard FileManager.default.fileExists(atPath: directory.path) else { return }

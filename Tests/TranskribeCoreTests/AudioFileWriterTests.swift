@@ -71,3 +71,22 @@ private final class LockedCounter: @unchecked Sendable {
     var value: Int { lock.withLock { count } }
     func increment() { lock.withLock { count += 1 } }
 }
+
+@Suite struct LiveCopyTests {
+    @Test func writerAlsoProducesA16kLiveCopy() async throws {
+        let directory = try Fixtures.temporaryDirectory()
+        let live = directory.appendingPathComponent("live.pcm")
+        let writer = try AudioFileWriter(url: directory.appendingPathComponent("out.m4a"), sampleRate: 48_000, liveCopy: live)
+        let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000)!
+        buffer.frameLength = 48_000
+        for i in 0..<48_000 { buffer.floatChannelData![0][i] = 0.5 * sin(Float(i) * 0.05) }
+
+        try writer.write(buffer, hostSeconds: 10)
+        try writer.write(buffer, hostSeconds: 12) // 1 s gap → silence in both files
+        _ = writer.finish()
+
+        let duration = PCMStore.Reader(url: live).duration
+        #expect(abs(duration - 3) < 0.05)
+    }
+}

@@ -30,8 +30,11 @@ final class AudioFileWriter: @unchecked Sendable {
     private var nextHostSeconds: Double?
     private var firstHostSeconds: Double?
     private var framesWritten: AVAudioFramePosition = 0
+    /// Optional readable 16 kHz copy, so transcription can run while recording.
+    private let liveWriter: PCMStore.Writer?
+    private let resampler: Resampler?
 
-    init(url: URL, sampleRate: Double) throws {
+    init(url: URL, sampleRate: Double, liveCopy: URL? = nil) throws {
         format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)!
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -40,6 +43,13 @@ final class AudioFileWriter: @unchecked Sendable {
             AVEncoderBitRateKey: Self.bitRate,
         ]
         file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        if let liveCopy {
+            liveWriter = try PCMStore.Writer(url: liveCopy)
+            resampler = try Resampler(from: format)
+        } else {
+            liveWriter = nil
+            resampler = nil
+        }
     }
 
     /// Appends `buffer` captured at `hostSeconds` and returns its RMS level (0...1).
@@ -54,6 +64,7 @@ final class AudioFileWriter: @unchecked Sendable {
                 if gap > 0.05 { try writeSilence(seconds: gap, to: file) }
             }
             try file.write(from: mono)
+            try writeLiveCopy(mono)
             framesWritten += AVAudioFramePosition(mono.frameLength)
             nextHostSeconds = hostSeconds + Double(mono.frameLength) / format.sampleRate
         }
@@ -80,9 +91,15 @@ final class AudioFileWriter: @unchecked Sendable {
             silence.frameLength = count
             memset(silence.floatChannelData![0], 0, Int(count) * MemoryLayout<Float>.size)
             try file.write(from: silence)
+            try writeLiveCopy(silence)
             framesWritten += AVAudioFramePosition(count)
             remaining -= count
         }
+    }
+
+    private func writeLiveCopy(_ buffer: AVAudioPCMBuffer) throws {
+        guard let liveWriter, let resampler else { return }
+        try liveWriter.append(try resampler.convert(buffer))
     }
 
     /// Averages all channels into one. Input must already be at the writer's sample rate.
@@ -112,5 +129,38 @@ final class AudioFileWriter: @unchecked Sendable {
         var sum: Float = 0
         for i in 0..<Int(buffer.frameLength) { sum += data[i] * data[i] }
         return min(1, sqrt(sum / Float(buffer.frameLength)))
+    }
+}
+
+/// Streams mono audio at any rate down to 16 kHz, keeping converter state between buffers.
+final class Resampler {
+    private let converter: AVAudioConverter
+    private let output: AVAudioFormat
+
+    init(from input: AVAudioFormat) throws {
+        output = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: PCMStore.sampleRate, channels: 1, interleaved: false)!
+        guard let converter = AVAudioConverter(from: input, to: output) else {
+            throw AudioDecoder.DecodeError.readFailed("unsupported recording format")
+        }
+        self.converter = converter
+    }
+
+    func convert(_ buffer: AVAudioPCMBuffer) throws -> [Float] {
+        let ratio = output.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 64
+        guard let out = AVAudioPCMBuffer(pcmFormat: output, frameCapacity: capacity) else { return [] }
+        var supplied = false
+        var error: NSError?
+        converter.convert(to: out, error: &error) { _, status in
+            if supplied {
+                status.pointee = .noDataNow
+                return nil
+            }
+            supplied = true
+            status.pointee = .haveData
+            return buffer
+        }
+        if let error { throw error }
+        return Array(UnsafeBufferPointer(start: out.floatChannelData![0], count: Int(out.frameLength)))
     }
 }

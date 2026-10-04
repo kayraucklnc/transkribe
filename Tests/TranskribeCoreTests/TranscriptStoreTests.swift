@@ -87,3 +87,29 @@ import Testing
         #expect(try TranscriptStore(rootDirectory: root).loadAll().isEmpty)
     }
 }
+
+@Suite struct CheckpointTests {
+    @Test func savesLoadsAndClearsTrackCheckpoints() throws {
+        let store = TranscriptStore(rootDirectory: try Fixtures.temporaryDirectory())
+        let transcript = Fixtures.transcript()
+        try store.save(transcript)
+        let checkpoint = TrackCheckpoint(committedUntil: 42, segments: [
+            RawSegment(start: 0, end: 4, text: "Merhaba", words: [Word(start: 0, end: 1, text: " Merhaba")]),
+        ], language: "tr")
+
+        try store.saveCheckpoint(checkpoint, for: transcript, track: transcript.tracks[0])
+        #expect(store.loadCheckpoint(for: transcript, track: transcript.tracks[0]) == checkpoint)
+
+        store.clearCheckpoints(for: transcript)
+        #expect(store.loadCheckpoint(for: transcript, track: transcript.tracks[0]) == nil)
+    }
+
+    @Test func meSpeakerRoundTripsAndDefaultsToNil() throws {
+        let store = TranscriptStore(rootDirectory: try Fixtures.temporaryDirectory())
+        var transcript = Fixtures.transcript()
+        #expect(transcript.meSpeaker == nil)
+        transcript.meSpeaker = 2
+        try store.save(transcript)
+        #expect(try store.loadAll().first?.meSpeaker == 2)
+    }
+}

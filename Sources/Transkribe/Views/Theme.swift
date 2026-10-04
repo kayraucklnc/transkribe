@@ -54,3 +54,71 @@ struct SpeakerAvatar: View {
             .background(Theme.color(for: speaker).gradient, in: Circle())
     }
 }
+
+extension Color {
+    /// A color that differs between light and dark appearance.
+    init(light: NSColor, dark: NSColor) {
+        self.init(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .vibrantDark]) != nil ? dark : light
+        })
+    }
+}
+
+extension Theme {
+    /// iMessage-like bubble fills.
+    static let myBubble = LinearGradient(
+        colors: [Color(red: 0.16, green: 0.56, blue: 1.0), Color(red: 0.04, green: 0.45, blue: 0.98)],
+        startPoint: .top, endPoint: .bottom
+    )
+    static let theirBubble = Color(
+        light: NSColor(red: 0.914, green: 0.914, blue: 0.922, alpha: 1),
+        dark: NSColor(red: 0.227, green: 0.227, blue: 0.235, alpha: 1)
+    )
+    static let card = Color(
+        light: NSColor(white: 1, alpha: 1),
+        dark: NSColor(white: 0.16, alpha: 1)
+    )
+    static let canvas = Color(
+        light: NSColor(red: 0.965, green: 0.965, blue: 0.972, alpha: 1),
+        dark: NSColor(red: 0.105, green: 0.105, blue: 0.115, alpha: 1)
+    )
+}
+
+/// Overlapping avatars for a conversation's participants.
+struct AvatarStack: View {
+    let transcript: Transcript
+    var size: CGFloat = 22
+    var limit = 4
+
+    var body: some View {
+        HStack(spacing: -size * 0.3) {
+            ForEach(Array(transcript.speakers.prefix(limit)), id: \.self) { speaker in
+                SpeakerAvatar(name: transcript.name(of: speaker), speaker: speaker, size: size)
+                    .overlay(Circle().stroke(Theme.card, lineWidth: 2))
+            }
+        }
+    }
+}
+
+/// Tiny "who spoke when" strip.
+struct SpeakerStrip: View {
+    let segments: [Segment]
+    let duration: TimeInterval
+    var height: CGFloat = 6
+
+    var body: some View {
+        Canvas { context, size in
+            let track = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: size.height / 2)
+            context.fill(track, with: .color(.primary.opacity(0.07)))
+            guard duration > 0 else { return }
+            context.clip(to: track)
+            for segment in segments {
+                let x = segment.start / duration * size.width
+                let width = max(1, (segment.end - segment.start) / duration * size.width)
+                context.fill(Path(CGRect(x: x, y: 0, width: width, height: size.height)),
+                             with: .color(segment.speaker.map(Theme.color(for:)) ?? .accentColor))
+            }
+        }
+        .frame(height: height)
+    }
+}

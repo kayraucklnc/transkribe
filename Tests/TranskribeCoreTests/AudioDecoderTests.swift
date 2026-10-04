@@ -72,3 +72,21 @@ import Testing
         #expect(abs(samples.count - 16_000) < 2_000)
     }
 }
+
+@Suite struct RangedDecodeTests {
+    @Test func decodesOnlyTheRequestedRange() async throws {
+        let url = try Fixtures.temporaryDirectory().appendingPathComponent("long.wav")
+        let format = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_000 * 4)!
+        buffer.frameLength = 16_000 * 4
+        for i in 0..<Int(buffer.frameLength) { buffer.floatChannelData![0][i] = i < 32_000 ? 0.1 : 0.6 }
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            try file.write(from: buffer)
+        } // closing the file finalizes its header
+
+        let samples = try await AudioDecoder.decode(url: url, from: 2.5, to: 3.5)
+        #expect(abs(samples.count - 16_000) < 200)
+        #expect(abs((samples.first ?? 0) - 0.6) < 0.05)
+    }
+}

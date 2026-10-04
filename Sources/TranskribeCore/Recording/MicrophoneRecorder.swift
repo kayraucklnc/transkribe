@@ -8,6 +8,7 @@ final class MicrophoneRecorder: @unchecked Sendable {
 
     func start(
         to url: URL,
+        liveCopy: URL?,
         echoCancellation: Bool,
         onLevel: @escaping @Sendable (Float) -> Void,
         onFailure: @escaping @Sendable (Error) -> Void
@@ -25,7 +26,7 @@ final class MicrophoneRecorder: @unchecked Sendable {
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw RecordingError.noMicrophone
         }
-        let writer = try AudioFileWriter(url: url, sampleRate: format.sampleRate)
+        let writer = try AudioFileWriter(url: url, sampleRate: format.sampleRate, liveCopy: liveCopy)
         self.writer = writer
 
         let failure = FirstFailure(handler: onFailure)

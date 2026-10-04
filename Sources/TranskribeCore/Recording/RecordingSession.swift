@@ -65,6 +65,19 @@ public final class RecordingSession: @unchecked Sendable {
     public static let microphoneFile = "microphone.m4a"
     public static let systemFile = "system.m4a"
 
+    /// Readable 16 kHz copies written during recording for live transcription. Removed once
+    /// the transcript is finished.
+    public static func liveCopyName(for fileName: String) -> String {
+        (fileName as NSString).deletingPathExtension + ".live.pcm"
+    }
+
+    public var liveTracks: [(source: TrackSource, url: URL)] {
+        var tracks: [(TrackSource, URL)] = []
+        if source.usesMicrophone { tracks.append((.microphone, directory.appendingPathComponent(Self.liveCopyName(for: Self.microphoneFile)))) }
+        if source.usesSystemAudio { tracks.append((.system, directory.appendingPathComponent(Self.liveCopyName(for: Self.systemFile)))) }
+        return tracks
+    }
+
     public let source: RecordingSource
     private let directory: URL
     private let microphone = MicrophoneRecorder()
@@ -94,12 +107,17 @@ public final class RecordingSession: @unchecked Sendable {
     public func start(onLevel: @escaping @Sendable (Float) -> Void, onFailure: @escaping @Sendable (Error) -> Void) async throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if source.usesSystemAudio {
-            try await system.start(to: directory.appendingPathComponent(Self.systemFile), onLevel: onLevel, onFailure: onFailure)
+            try await system.start(
+                to: directory.appendingPathComponent(Self.systemFile),
+                liveCopy: directory.appendingPathComponent(Self.liveCopyName(for: Self.systemFile)),
+                onLevel: onLevel, onFailure: onFailure
+            )
         }
         if source.usesMicrophone {
             do {
                 try microphone.start(
                     to: directory.appendingPathComponent(Self.microphoneFile),
+                    liveCopy: directory.appendingPathComponent(Self.liveCopyName(for: Self.microphoneFile)),
                     echoCancellation: source == .both,
                     onLevel: onLevel,
                     onFailure: onFailure

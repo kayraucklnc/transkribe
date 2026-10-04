@@ -15,6 +15,8 @@ final class AppModel {
 
     enum Activity: Equatable {
         case transcribing(Double)
+        /// Transcribing a recording that is still running.
+        case live
         case identifyingSpeakers
     }
 
@@ -24,7 +26,7 @@ final class AppModel {
         var settingsURL: URL?
     }
 
-    private(set) var transcripts: [Transcript] = []
+    var transcripts: [Transcript] = []
     var selection: Transcript.ID? {
         didSet { UserDefaults.standard.set(selection?.uuidString, forKey: Self.selectionKey) }
     }
@@ -47,6 +49,10 @@ final class AppModel {
     let engine: TranscriptionEngine
     let diarizer: DiarizationEngine
     var session: (recorder: RecordingSession, transcript: Transcript)?
+    /// Transcription that runs alongside the current recording.
+    var live: (task: Task<Void, Error>, sources: [LiveAudioSource])?
+    /// The transcript being recorded right now, shown live.
+    var liveRecordingID: Transcript.ID?
     var startFailure: Error?
     var queueTask: Task<Void, Never>?
     var transcribingID: Transcript.ID?
@@ -143,6 +149,11 @@ final class AppModel {
     func renameSpeaker(_ speaker: Int, in id: Transcript.ID, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         update(id, persist: true) { $0.speakerNames[speaker] = trimmed.isEmpty ? nil : trimmed }
+    }
+
+    /// Marks which speaker is the user (-1 = none of them, nil = ask again).
+    func setMe(_ speaker: Int?, in id: Transcript.ID) {
+        update(id, persist: true) { $0.meSpeaker = speaker }
     }
 
     /// Moves everything `speaker` said to `target` (e.g. two detected voices are one person).
