@@ -32,7 +32,7 @@ done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 
 echo "→ Signing (ad-hoc)"
-codesign --force --deep --sign - --identifier sh.ratel.transkribe "$APP"
+codesign --force --deep --sign - --identifier kayrauckilinc.dev.transkribe "$APP"
 
 if [[ "${1:-}" == "--install" ]]; then
   rm -rf /Applications/Transkribe.app

@@ -55,7 +55,11 @@ struct TranskribeApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    @MainActor let model = AppModel()
+    @MainActor let model: AppModel = {
+        // Carry settings over from the old identifier before the model reads them.
+        IdentifierMigration.migrateDefaults()
+        return AppModel()
+    }()
     @MainActor let player = PlayerController()
     @MainActor lazy var ai = AIService(model: model)
     @MainActor lazy var dictation = DictationController(model: model)

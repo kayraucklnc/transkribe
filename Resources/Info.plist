@@ -7,7 +7,7 @@
     <key>CFBundleDisplayName</key>
     <string>Transkribe</string>
     <key>CFBundleIdentifier</key>
-    <string>sh.ratel.transkribe</string>
+    <string>kayrauckilinc.dev.transkribe</string>
     <key>CFBundleExecutable</key>
     <string>Transkribe</string>
     <key>CFBundleIconFile</key>

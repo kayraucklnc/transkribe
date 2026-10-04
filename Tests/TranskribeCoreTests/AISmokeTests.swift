@@ -67,7 +67,7 @@ struct AISmokeTests {
     }
 
     @Test func keychainRoundTrip() throws {
-        let store = KeychainStore(service: "sh.ratel.transkribe.tests")
+        let store = KeychainStore(service: "kayrauckilinc.dev.transkribe.tests")
         let account = "smoke-\(UUID().uuidString)"
         try store.set("first", account: account)
         try store.set("second", account: account)

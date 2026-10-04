@@ -3,7 +3,7 @@ import Security
 
 /// Stores secrets (like the Anthropic API key) as generic passwords in the user's keychain.
 public struct KeychainStore: Sendable {
-    public static let defaultService = "sh.ratel.transkribe"
+    public static let defaultService = IdentifierMigration.bundleIdentifier
 
     public struct KeychainError: LocalizedError, Equatable, Sendable {
         public var status: OSStatus
@@ -15,12 +15,25 @@ public struct KeychainStore: Sendable {
     }
 
     public let service: String
+    /// Where the secret lived under the app's previous identifier; moved over on first read.
+    public let legacyService: String?
 
-    public init(service: String = KeychainStore.defaultService) {
+    public init(service: String = KeychainStore.defaultService,
+                legacyService: String? = IdentifierMigration.legacyBundleIdentifier) {
         self.service = service
+        self.legacyService = legacyService == service ? nil : legacyService
     }
 
     public func get(account: String) -> String? {
+        if let value = read(account: account) { return value }
+        guard let legacyService else { return nil }
+        let legacy = KeychainStore(service: legacyService, legacyService: nil)
+        guard let value = legacy.read(account: account), (try? set(value, account: account)) != nil else { return nil }
+        try? legacy.delete(account: account)
+        return value
+    }
+
+    private func read(account: String) -> String? {
         var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
