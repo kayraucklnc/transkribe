@@ -37,6 +37,7 @@ struct TranskribeApp: App {
 
         Settings {
             SettingsView()
+                .environment(delegate.calls)
                 .environment(delegate.dictation)
                 .environment(delegate.ai)
                 .environment(delegate.model)
@@ -63,11 +64,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor let player = PlayerController()
     @MainActor lazy var ai = AIService(model: model)
     @MainActor lazy var dictation = DictationController(model: model)
+    @MainActor lazy var calls = CallMonitor(model: model)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
             dictation.installShortcut()
             dictation.warmUp()
+            calls.start()
         }
     }
 

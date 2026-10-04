@@ -10,7 +10,7 @@ extension AppModel {
         }
     }
 
-    func startRecording() {
+    func startRecording(title: String? = nil) {
         guard recordingState == .idle else { return }
         recordingState = .starting
         selectedPerson = nil
@@ -18,7 +18,7 @@ extension AppModel {
         selection = nil
         levels = Array(repeating: 0, count: Self.levelHistory)
         let source = recordingSource
-        let transcript = Transcript(title: TitleGenerator.recordingTitle(), tracks: [])
+        let transcript = Transcript(title: title ?? TitleGenerator.recordingTitle(), tracks: [])
         let recorder = RecordingSession(source: source, directory: store.directory(for: transcript))
         Task {
             do {

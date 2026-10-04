@@ -8,6 +8,8 @@ struct SettingsView: View {
                 .tabItem { Label("Transcription", systemImage: "waveform") }
             DictationSettingsTab()
                 .tabItem { Label("Dictation", systemImage: "mic.badge.plus") }
+            CallSettingsTab()
+                .tabItem { Label("Calls", systemImage: "phone") }
             VocabularySettingsTab()
                 .tabItem { Label("Vocabulary", systemImage: "character.book.closed") }
             AISettingsTab()
@@ -47,6 +49,56 @@ private struct TranscriptionSettingsTab: View {
                 }
                 .buttonStyle(.link)
             }
+            .padding(24)
+        }
+    }
+}
+
+private struct CallSettingsTab: View {
+    @Environment(CallMonitor.self) private var calls
+    @State private var calendarAllowed = CalendarTitles.isAllowed
+
+    var body: some View {
+        @Bindable var calls = calls
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                Section(title: "When a call starts") {
+                    Toggle(isOn: $calls.offersToRecord) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Offer to record it")
+                            Text("When Zoom, Teams, FaceTime, WhatsApp, Slack or a browser call starts using your microphone, a small card asks if you want to record. Nothing is recorded unless you say so.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Toggle(isOn: $calls.stopsWithCall) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Stop recording when the call ends")
+                            Text("Only for recordings started from that card.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(!calls.offersToRecord)
+                }
+                Section(title: "Calendar") {
+                    Toggle(isOn: Binding(get: { calls.usesCalendar && calendarAllowed }, set: { on in
+                        guard on else { calls.usesCalendar = false; return }
+                        Task {
+                            calendarAllowed = await CalendarTitles.requestAccess()
+                            calls.usesCalendar = calendarAllowed
+                        }
+                    })) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Name call recordings after your calendar event")
+                            Text("“Weekly sync with Hakan” instead of a date. Your calendar stays on this Mac.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .toggleStyle(.switch)
             .padding(24)
         }
     }

@@ -26,6 +26,8 @@
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Transkribe records your microphone so it can transcribe what you say.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Transkribe names call recordings after the calendar event happening at the time.</string>
     <key>NSContactsUsageDescription</key>
     <string>Transkribe looks up people in your Contacts so you can see every conversation you've had with them.</string>
     <key>NSScreenCaptureUsageDescription</key>

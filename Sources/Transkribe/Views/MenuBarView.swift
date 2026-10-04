@@ -31,7 +31,7 @@ struct MenuBarView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                Button(action: model.startRecording) {
+                Button { model.startRecording() } label: {
                     Label("Start Recording", systemImage: "record.circle").frame(maxWidth: .infinity)
                 }
                 .controlSize(.large)
