@@ -98,9 +98,11 @@ struct MarkdownView: View {
         var result = (try? AttributedString(markdown: linked, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
         result.font = .system(size: fontSize)
+        // Timestamps are quiet, small and tinted: there when you want to jump, out of the way otherwise.
         for run in result.runs where run.link != nil {
-            result[run.range].foregroundColor = .accentColor
-            result[run.range].font = .system(size: fontSize - 1, weight: .medium).monospacedDigit()
+            result[run.range].foregroundColor = .accentColor.opacity(0.8)
+            result[run.range].font = .system(size: fontSize - 2.5, weight: .semibold).monospacedDigit()
+            result[run.range].baselineOffset = 0.5
         }
         return result
     }

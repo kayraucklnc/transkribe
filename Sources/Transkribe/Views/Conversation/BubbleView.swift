@@ -11,6 +11,8 @@ struct BubbleView: View, Equatable {
     let query: String
     let transcriptID: Transcript.ID
     let speakers: [Int: String]
+    /// Briefly highlighted after jumping here from search.
+    var isFlashing = false
     @Environment(PlayerController.self) private var player
     @Environment(AppModel.self) private var model
     @State private var isHovered = false
@@ -22,7 +24,7 @@ struct BubbleView: View, Equatable {
             && lhs.bubble.paragraph.words.count == rhs.bubble.paragraph.words.count
             && lhs.bubble.paragraph.end == rhs.bubble.paragraph.end && lhs.bubble.paragraph.speaker == rhs.bubble.paragraph.speaker
             && lhs.name == rhs.name && lhs.showsAvatar == rhs.showsAvatar && lhs.playhead == rhs.playhead
-            && lhs.query == rhs.query && lhs.speakers == rhs.speakers
+            && lhs.query == rhs.query && lhs.speakers == rhs.speakers && lhs.isFlashing == rhs.isFlashing
     }
 
     private var paragraph: Paragraph { bubble.paragraph }
@@ -73,8 +75,11 @@ struct BubbleView: View, Equatable {
                     }
                 }
             }
+            .shadow(color: isFlashing ? Color.yellow.opacity(0.9) : .clear, radius: isFlashing ? 14 : 0)
             .overlay {
-                if playhead != nil {
+                if isFlashing {
+                    bubbleShape.stroke(Color.yellow, lineWidth: 2.5)
+                } else if playhead != nil {
                     bubbleShape.stroke(mine ? Color.white.opacity(0.6) : Theme.color(for: paragraph.speaker).opacity(0.7), lineWidth: 2)
                 }
             }

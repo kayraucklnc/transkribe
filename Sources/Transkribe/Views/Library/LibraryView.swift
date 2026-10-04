@@ -1,7 +1,7 @@
 import SwiftUI
 import TranskribeCore
 
-/// Home: start a recording, or pick up any past conversation.
+/// Home: a warm welcome, one obvious way to start, and every conversation at a glance.
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
     @FocusState private var searchFocused: Bool
@@ -9,44 +9,59 @@ struct LibraryView: View {
     var body: some View {
         @Bindable var model = model
         ScrollView {
-            VStack(alignment: .leading, spacing: 34) {
-                RecordHero()
+            VStack(alignment: .leading, spacing: 44) {
+                Welcome()
                 if model.transcripts.isEmpty {
                     EmptyLibrary()
                 } else {
-                    HStack {
-                        Text("Conversations")
-                            .font(.title2.weight(.bold))
-                        Spacer()
-                        SearchField(text: $model.query, focused: $searchFocused)
-                            .frame(width: 260)
-                    }
-                    let sections = DateSection.group(model.filteredTranscripts)
-                    if sections.isEmpty {
-                        ContentUnavailableView.search(text: model.query)
-                            .frame(maxWidth: .infinity)
-                    }
-                    ForEach(sections, id: \.title) { section in
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(section.title)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 270, maximum: 420), spacing: 18)], spacing: 18) {
-                                ForEach(section.transcripts) { transcript in
-                                    ConversationCard(transcript: transcript, activity: model.activity[transcript.id])
+                    VStack(alignment: .leading, spacing: 22) {
+                        HStack(alignment: .lastTextBaseline) {
+                            Text("Conversations")
+                                .font(.system(size: 22, weight: .bold, design: .rounded))
+                            Text("\(model.transcripts.count)")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.tertiary)
+                            Spacer()
+                            SearchField(text: $model.query, focused: $searchFocused)
+                                .frame(width: 280)
+                        }
+                        let results = model.filteredTranscripts
+                        if !model.query.trimmingCharacters(in: .whitespaces).isEmpty, !results.isEmpty {
+                            SearchResults(transcripts: results, query: model.query)
+                        } else if results.isEmpty {
+                            ContentUnavailableView.search(text: model.query)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 30)
+                        } else {
+                            if model.query.isEmpty, let latest = results.first {
+                                FeaturedCard(transcript: latest, activity: model.activity[latest.id])
+                            }
+                            let rest = model.query.isEmpty ? Array(results.dropFirst()) : results
+                            ForEach(DateSection.group(rest), id: \.title) { section in
+                                VStack(alignment: .leading, spacing: 14) {
+                                    Text(section.title.uppercased())
+                                        .font(.caption.weight(.semibold))
+                                        .tracking(0.8)
+                                        .foregroundStyle(.secondary)
+                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 280, maximum: 420), spacing: 18)], spacing: 18) {
+                                        ForEach(section.transcripts) { transcript in
+                                            ConversationCard(transcript: transcript, activity: model.activity[transcript.id])
+                                        }
+                                    }
                                 }
+                                .padding(.top, 10)
                             }
                         }
                     }
                 }
             }
-            .padding(.horizontal, 40)
-            .padding(.top, 24)
-            .padding(.bottom, 60)
+            .padding(.horizontal, 48)
+            .padding(.top, 36)
+            .padding(.bottom, 70)
             .frame(maxWidth: 1240)
             .frame(maxWidth: .infinity)
         }
-        .background(Theme.canvas)
+        .background(AmbientBackground())
         .background {
             Button("") { searchFocused = true }
                 .keyboardShortcut("f")
@@ -55,56 +70,88 @@ struct LibraryView: View {
     }
 }
 
-/// The big call to action: record, with the source right next to it.
-private struct RecordHero: View {
+/// Greeting plus the record orb: the one thing most people came to do.
+private struct Welcome: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 26) {
-            RecordButton(size: 84)
-            VStack(alignment: .leading, spacing: 10) {
-                Text(model.isRecording ? "Recording…" : "New conversation")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                Text("Record, or drop any audio or video file. Every language, on your Mac.")
-                    .font(.callout)
+        HStack(alignment: .center, spacing: 44) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(greeting)
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(colors: [.primary, .primary.opacity(0.7)], startPoint: .leading, endPoint: .trailing)
+                    )
+                Text(dateline)
+                    .font(.title3)
                     .foregroundStyle(.secondary)
-                HStack(spacing: 14) {
+                HStack(spacing: 12) {
                     SourcePicker()
                         .disabled(model.isRecording)
                     Button {
                         FileImport.presentOpenPanel(model: model)
                     } label: {
-                        Label("Import File", systemImage: "square.and.arrow.down")
+                        Label("Import", systemImage: "arrow.down.doc")
+                            .font(.callout.weight(.medium))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .glassBackground(in: Capsule(), interactive: true)
                     }
-                    .buttonStyle(.borderless)
-                    .help("Transcribe an audio or video file (⌘O)")
+                    .buttonStyle(.plain)
+                    .help("Transcribe an audio or video file, or drop it anywhere (⌘O)")
                 }
-                .padding(.top, 4)
+                .padding(.top, 10)
             }
             Spacer(minLength: 0)
+            VStack(spacing: 14) {
+                RecordButton(size: 132)
+                Text(model.isRecording ? "Recording" : "Record")
+                    .font(.system(.headline, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.trailing, 20)
         }
-        .padding(26)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .shadow(color: .black.opacity(0.06), radius: 18, y: 6)
+        .padding(.vertical, 12)
+    }
+
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let part = switch hour {
+        case 5..<12: "Good morning"
+        case 12..<18: "Good afternoon"
+        default: "Good evening"
+        }
+        let name = NSFullUserName().split(separator: " ").first.map(String.init) ?? ""
+        return name.isEmpty ? part : "\(part), \(name)"
+    }
+
+    private var dateline: String {
+        let date = Date().formatted(.dateTime.weekday(.wide).day().month(.wide))
+        let week = model.transcripts.filter { $0.createdAt > Date().addingTimeInterval(-7 * 86_400) }
+        let seconds = week.reduce(0) { $0 + $1.duration }
+        guard !week.isEmpty else { return date }
+        let length = Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+        return "\(date) · \(week.count) this week, \(length) transcribed"
     }
 }
 
 private struct EmptyLibrary: View {
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             Image(systemName: "bubble.left.and.text.bubble.right")
-                .font(.system(size: 44, weight: .light))
+                .font(.system(size: 46, weight: .light))
                 .foregroundStyle(.tertiary)
-            Text("Your conversations will appear here")
-                .font(.title3.weight(.medium))
+                .symbolRenderingMode(.hierarchical)
+            Text("Your conversations will live here")
+                .font(.system(.title3, design: .rounded).weight(.semibold))
             Text("Each one becomes a readable chat you can play back, search, summarize and ask questions about.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
+                .frame(maxWidth: 400)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 50)
+        .padding(.top, 40)
     }
 }
 
@@ -113,21 +160,24 @@ private struct SearchField: View {
     var focused: FocusState<Bool>.Binding
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search everything", text: $text)
+            TextField("Search conversations", text: $text)
                 .textFieldStyle(.plain)
                 .focused(focused)
-            if !text.isEmpty {
+            if text.isEmpty {
+                Text("⌘F")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.tertiary)
+            } else {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(Theme.card, in: Capsule())
-        .overlay(Capsule().stroke(Color.primary.opacity(0.08)))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .glassBackground(in: Capsule())
     }
 }
 

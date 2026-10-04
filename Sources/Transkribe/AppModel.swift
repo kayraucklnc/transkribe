@@ -31,6 +31,8 @@ final class AppModel {
         didSet { UserDefaults.standard.set(selection?.uuidString, forKey: Self.selectionKey) }
     }
     var query = ""
+    /// A moment to scroll to and briefly highlight in the open conversation (from search).
+    var focus: (id: Transcript.ID, time: TimeInterval, token: UUID)?
     var alert: Alert?
     var toast: String?
 
@@ -149,6 +151,12 @@ final class AppModel {
     func renameSpeaker(_ speaker: Int, in id: Transcript.ID, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         update(id, persist: true) { $0.speakerNames[speaker] = trimmed.isEmpty ? nil : trimmed }
+    }
+
+    /// Opens a conversation scrolled to `time`, e.g. from a search result.
+    func open(_ id: Transcript.ID, at time: TimeInterval?) {
+        selection = id
+        if let time { focus = (id, time, UUID()) }
     }
 
     /// Marks which speaker is the user (-1 = none of them, nil = ask again).

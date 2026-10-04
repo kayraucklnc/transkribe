@@ -6,6 +6,7 @@ struct ChatThread: View {
     let transcript: Transcript
     let isLive: Bool
     @Environment(AppModel.self) private var model
+    @State private var flashID: Paragraph.ID?
 
     var body: some View {
         let paragraphs = ParagraphBuilder.paragraphs(from: transcript.segments)
@@ -26,7 +27,7 @@ struct ChatThread: View {
                     }
                     ThreadStatus(transcript: transcript, isLive: isLive)
                     BubbleList(transcriptID: transcript.id, items: items, starts: starts, names: names,
-                               labelsSpeakers: transcript.hasSpeakers, query: model.query, scroll: proxy)
+                               labelsSpeakers: transcript.hasSpeakers, query: model.query, flashID: flashID, scroll: proxy)
                     if isLive {
                         TypingIndicator()
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -44,6 +45,16 @@ struct ChatThread: View {
                 guard isLive else { return }
                 withAnimation(.easeOut(duration: 0.35)) { proxy.scrollTo("live-end", anchor: .bottom) }
             }
+            .task(id: model.focus?.token) {
+                // Jump to a moment chosen in search, then highlight it for a moment.
+                guard let focus = model.focus, focus.id == transcript.id else { return }
+                guard let target = starts.last(where: { $0.start <= focus.time + 0.05 })?.id ?? starts.first?.id else { return }
+                try? await Task.sleep(for: .milliseconds(150))
+                withAnimation(.easeInOut(duration: 0.5)) { proxy.scrollTo(target, anchor: UnitPoint(x: 0.5, y: 0.35)) }
+                withAnimation(.easeIn(duration: 0.2)) { flashID = target }
+                try? await Task.sleep(for: .seconds(1.6))
+                withAnimation(.easeOut(duration: 0.8)) { flashID = nil }
+            }
         }
     }
 }
@@ -57,6 +68,7 @@ private struct BubbleList: View {
     let names: [Int: String]
     let labelsSpeakers: Bool
     let query: String
+    let flashID: Paragraph.ID?
     let scroll: ScrollViewProxy
     @Environment(PlayerController.self) private var player
 
@@ -78,7 +90,8 @@ private struct BubbleList: View {
                         playhead: bubble.id == current ? player.currentTime : nil,
                         query: query,
                         transcriptID: transcriptID,
-                        speakers: names
+                        speakers: names,
+                        isFlashing: bubble.id == flashID
                     )
                     .equatable()
                     .id(bubble.id)

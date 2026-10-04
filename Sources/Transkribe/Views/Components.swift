@@ -30,25 +30,42 @@ struct RecordButton: View {
         let level = CGFloat(min(1, pow(Double(model.levels.last ?? 0) * 6, 0.7)))
         Button(action: model.toggleRecording) {
             ZStack {
-                // Halo that breathes with the input level while recording.
+                // Bloom: a soft colored light around the orb, stronger on hover and with your voice.
                 Circle()
-                    .fill(Theme.record.opacity(0.18))
-                    .scaleEffect(recording ? 1.08 + level * 0.28 : 0.9)
-                    .opacity(recording ? 1 : 0)
+                    .fill(Theme.record)
+                    .frame(width: size * 0.9, height: size * 0.9)
+                    .blur(radius: size * 0.28)
+                    .opacity(recording ? 0.45 + level * 0.4 : (isHovered ? 0.55 : 0.32))
+                    .scaleEffect(recording ? 1 + level * 0.25 : 1)
                     .animation(.easeOut(duration: 0.15), value: level)
+                // Glass ring.
                 Circle()
                     .fill(.clear)
                     .glassBackground(in: Circle(), interactive: true)
-                RoundedRectangle(cornerRadius: recording ? size * 0.09 : size * 0.3, style: .continuous)
-                    .fill(Theme.record.gradient)
-                    .frame(width: recording ? size * 0.3 : size * 0.6, height: recording ? size * 0.3 : size * 0.6)
-                    .shadow(color: Theme.record.opacity(0.45), radius: isHovered ? 14 : 8, y: 3)
+                // Glossy core that morphs into a stop square while recording.
+                RoundedRectangle(cornerRadius: recording ? size * 0.08 : size * 0.31, style: .continuous)
+                    .fill(
+                        RadialGradient(
+                            colors: [Color(red: 1, green: 0.48, blue: 0.45), Theme.record, Color(red: 0.78, green: 0.08, blue: 0.22)],
+                            center: .init(x: 0.35, y: 0.3), startRadius: 1, endRadius: size * 0.45
+                        )
+                    )
+                    .overlay(alignment: .top) {
+                        // Specular highlight.
+                        Ellipse()
+                            .fill(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0)], startPoint: .top, endPoint: .bottom))
+                            .frame(width: size * 0.36, height: size * 0.18)
+                            .offset(y: size * 0.04)
+                            .opacity(recording ? 0 : 1)
+                    }
+                    .frame(width: recording ? size * 0.3 : size * 0.62, height: recording ? size * 0.3 : size * 0.62)
+                    .shadow(color: Theme.record.opacity(0.5), radius: 10, y: 4)
                 if model.recordingState == .starting {
                     ProgressView().controlSize(.small).tint(.white)
                 }
             }
             .frame(width: size, height: size)
-            .scaleEffect(isPressed ? 0.94 : (isHovered ? 1.03 : 1))
+            .scaleEffect(isPressed ? 0.93 : (isHovered ? 1.04 : 1))
             .contentShape(Circle())
         }
         .buttonStyle(PressStyle(isPressed: $isPressed))

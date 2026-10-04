@@ -8,6 +8,7 @@ struct ConversationView: View {
     @Environment(AppModel.self) private var model
     @Environment(PlayerController.self) private var player
     @AppStorage("showsInsights") private var showsInsights = true
+    @State private var showsFind = false
 
     private var isLive: Bool { model.liveRecordingID == transcript.id }
 
@@ -15,6 +16,22 @@ struct ConversationView: View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
                 ChatThread(transcript: transcript, isLive: isLive)
+                    .overlay(alignment: .top) {
+                        if showsFind || !model.query.isEmpty {
+                            FindBar(transcript: transcript) {
+                                showsFind = false
+                                model.query = ""
+                            }
+                            .padding(.top, 12)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                    }
+                    .animation(Theme.spring, value: showsFind || !model.query.isEmpty)
+                    .background {
+                        Button("") { showsFind = true }
+                            .keyboardShortcut("f")
+                            .hidden()
+                    }
                     .overlay(alignment: .bottom) {
                         Group {
                             if isLive {

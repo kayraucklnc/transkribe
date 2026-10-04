@@ -34,3 +34,24 @@ import Testing
         #expect(TranscriptSearch.matchingSegmentIDs(in: transcript, query: "").isEmpty)
     }
 }
+
+@Suite struct SearchHitTests {
+    private func transcript(_ texts: [String]) -> Transcript {
+        Fixtures.transcript(segments: texts.enumerated().map { Segment(start: Double($0.offset) * 10, end: Double($0.offset) * 10 + 5, text: $0.element) })
+    }
+
+    @Test func findsMatchingLinesInOrder() {
+        let hits = TranscriptSearch.hits(in: transcript(["Merhaba nasılsın", "Fiyat ne kadar?", "Fiyatı Pazartesi konuşalım"]), query: "fiyat")
+        #expect(hits.map(\.start) == [10, 20])
+        #expect(hits.first?.text == "Fiyat ne kadar?")
+    }
+
+    @Test func everyTermMustAppearInTheLine() {
+        let hits = TranscriptSearch.hits(in: transcript(["Pazartesi arayacağım", "Pazartesi demo", "demo hazır"]), query: "pazartesi demo")
+        #expect(hits.map(\.text) == ["Pazartesi demo"])
+    }
+
+    @Test func emptyQueryHasNoHits() {
+        #expect(TranscriptSearch.hits(in: transcript(["a"]), query: " ").isEmpty)
+    }
+}
