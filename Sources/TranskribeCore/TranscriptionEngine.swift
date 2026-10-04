@@ -30,6 +30,8 @@ public actor TranscriptionEngine {
     private var loaded: LoadedModel?
     private var preparing: Task<LoadedModel, Error>?
     private var isRunning = false
+    /// Last language confirmed by detection, used for stretches too short or unclear to tell.
+    private var lastLanguage: String?
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
     public init(model: String = TranscriptionEngine.defaultModel, modelsDirectory: URL = TranscriptionEngine.defaultModelsDirectory) {
@@ -166,24 +168,31 @@ public actor TranscriptionEngine {
         )
     }
 
-    /// Picks the most likely supported language from up to three 30-second samples of the audio.
+    /// Picks the language by asking Whisper about up to three 30-second samples of the audio and
+    /// voting among supported languages. Short or unclear audio (a quick "mm", noise) often comes
+    /// back as some other language; it then reuses the last language this engine settled on.
     private func chooseLanguage(_ whisper: WhisperKit, samples: [Float]) async -> String? {
-        guard !Self.supportedLanguages.isEmpty, samples.count > Int(AudioDecoder.sampleRate) else { return nil }
+        guard !Self.supportedLanguages.isEmpty else { return nil }
         let slice = Int(AudioDecoder.sampleRate) * 30
         let starts = samples.count <= slice ? [0] : [0, (samples.count - slice) / 2, samples.count - slice]
-        var scores: [String: Float] = [:]
-        for start in starts {
+        var votes: [String] = []
+        for start in starts where samples.count > start {
             let piece = Array(samples[start..<min(samples.count, start + slice)])
-            guard let detection = try? await whisper.detectLangauge(audioArray: piece) else { continue }
-            for language in Self.supportedLanguages {
-                scores[language, default: 0] += detection.langProbs[language] ?? 0
-            }
+            if let detection = try? await whisper.detectLangauge(audioArray: piece) { votes.append(detection.language) }
         }
-        return Self.bestLanguage(scores)
+        let chosen = Self.vote(votes, fallback: lastLanguage)
+        if let chosen { lastLanguage = chosen }
+        return chosen
     }
 
-    static func bestLanguage(_ scores: [String: Float]) -> String? {
-        scores.filter { $0.value > 0 }.max { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) }?.key
+    /// The supported language most samples agreed on; otherwise `fallback`; otherwise the first
+    /// supported language in a stable order.
+    static func vote(_ detected: [String], fallback: String?) -> String? {
+        let counts = Dictionary(detected.filter(supportedLanguages.contains).map { ($0, 1) }, uniquingKeysWith: +)
+        if let best = counts.max(by: { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) })?.key {
+            return best
+        }
+        return fallback ?? supportedLanguages.sorted().first
     }
 
     /// Whisper sometimes gets stuck repeating a syllable or word over real speech, depending on

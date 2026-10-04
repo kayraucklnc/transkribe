@@ -34,9 +34,15 @@ import Testing
 }
 
 @Suite struct SupportedLanguageTests {
-    @Test func picksTheMoreLikelySupportedLanguage() {
-        #expect(TranscriptionEngine.bestLanguage(["en": 0.2, "tr": 1.4]) == "tr")
-        #expect(TranscriptionEngine.bestLanguage(["en": 0, "tr": 0]) == nil)
+    @Test func votesAmongSupportedLanguages() {
+        #expect(TranscriptionEngine.vote(["tr", "en", "tr"], fallback: nil) == "tr")
         #expect(TranscriptionEngine.supportedLanguages == ["en", "tr"])
+    }
+
+    @Test func unsupportedDetectionsFallBack() {
+        // A quick "А ну да" heard as Russian must not switch a Turkish conversation to Russian.
+        #expect(TranscriptionEngine.vote(["ru"], fallback: "tr") == "tr")
+        #expect(TranscriptionEngine.vote(["ru", "en"], fallback: "tr") == "en")
+        #expect(TranscriptionEngine.vote([], fallback: nil) == "en")
     }
 }
