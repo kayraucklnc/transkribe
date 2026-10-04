@@ -91,6 +91,30 @@ final class AIService {
         }
     }
 
+    // MARK: - To-dos
+
+    /// Conversations whose to-dos are being looked for, with an error if that failed.
+    private(set) var actionSearches: [Transcript.ID: String?] = [:]
+
+    func findActionItems(in transcript: Transcript) {
+        guard let provider = provider(for: selectedModel) else { return }
+        let id = transcript.id
+        let chosen = selectedModel
+        cancel(key: "actions-\(id)")
+        actionSearches[id] = .some(nil)
+        tasks["actions-\(id)"] = Task {
+            do {
+                let items = try await ActionItems.extract(from: transcript, provider: provider, model: chosen)
+                model?.update(id, persist: true) { $0.actionItems = items }
+                actionSearches[id] = nil
+            } catch is CancellationError {
+                actionSearches[id] = nil
+            } catch {
+                actionSearches[id] = .some(error.localizedDescription)
+            }
+        }
+    }
+
     func cancelSummary(_ id: Transcript.ID) {
         cancel(key: "summary-\(id)")
         summaryDrafts[id] = nil

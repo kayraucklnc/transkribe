@@ -20,3 +20,17 @@ struct SummaryDemoTests {
         #expect(!text.isEmpty)
     }
 }
+
+/// Finds to-dos in a real stored transcript with Claude Code: TRANSKRIBE_SUMMARY_FILE=/path/transcript.json
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["TRANSKRIBE_SUMMARY_FILE"] != nil))
+struct ActionItemsDemoTests {
+    @Test func findToDosInStoredTranscript() async throws {
+        let url = URL(fileURLWithPath: ProcessInfo.processInfo.environment["TRANSKRIBE_SUMMARY_FILE"]!)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let transcript = try decoder.decode(Transcript.self, from: Data(contentsOf: url))
+        let items = try await ActionItems.extract(from: transcript, provider: ClaudeCodeProvider(), model: ClaudeCodeProvider.sonnet)
+        for item in items { print("TODO", item.task, "|", item.owner ?? "-", "|", item.due ?? "-", "|", item.time.map(TranscriptFormatter.timestamp) ?? "-") }
+        #expect(!items.isEmpty)
+    }
+}

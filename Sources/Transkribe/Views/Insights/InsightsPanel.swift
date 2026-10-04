@@ -9,11 +9,13 @@ struct InsightsPanel: View {
 
     enum Tab: String, CaseIterable {
         case summary = "Summary"
+        case todos = "To-dos"
         case ask = "Ask"
 
         var symbol: String {
             switch self {
             case .summary: "sparkles"
+            case .todos: "checklist"
             case .ask: "bubble.left.and.text.bubble.right"
             }
         }
@@ -55,6 +57,7 @@ struct InsightsPanel: View {
             Group {
                 switch tab {
                 case .summary: SummaryTab(transcript: transcript)
+                case .todos: ActionItemsTab(transcript: transcript)
                 case .ask: AskTab(transcript: transcript)
                 }
             }

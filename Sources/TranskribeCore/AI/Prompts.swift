@@ -8,7 +8,7 @@ public enum Prompts {
     // MARK: - Shared pieces
 
     /// English name of a Whisper language code ("tr" → "Turkish"), or nil if unknown.
-    static func languageName(for code: String?) -> String? {
+    public static func languageName(for code: String?) -> String? {
         guard let code, !code.isEmpty else { return nil }
         let base = code.split(separator: "-").first.map(String.init) ?? code
         return Locale(identifier: "en").localizedString(forLanguageCode: base)

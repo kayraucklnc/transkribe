@@ -132,6 +132,8 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var threadID: UUID?
     /// Each speaker's voiceprint, to recognize them in other recordings.
     public var speakerVoiceprints: [Int: [Float]] = [:]
+    /// To-dos found in the conversation (nil until the user asks for them).
+    public var actionItems: [ActionItem]?
 
     public init(
         id: UUID = UUID(),
@@ -157,7 +159,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, title, createdAt, duration, language, tracks, segments, status, speakerNames, meSpeaker, summary, chat, quality, speakerPeople, threadID
-        case speakerVoiceprints
+        case speakerVoiceprints, actionItems
     }
 
     public init(from decoder: Decoder) throws {
@@ -178,6 +180,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
         speakerPeople = try container.decodeIfPresent([Int: UUID].self, forKey: .speakerPeople) ?? [:]
         threadID = try container.decodeIfPresent(UUID.self, forKey: .threadID)
         speakerVoiceprints = try container.decodeIfPresent([Int: [Float]].self, forKey: .speakerVoiceprints) ?? [:]
+        actionItems = try container.decodeIfPresent([ActionItem].self, forKey: .actionItems)
     }
 
     /// The user's own speaker: their explicit choice, or the microphone track of a Mic + System recording.
