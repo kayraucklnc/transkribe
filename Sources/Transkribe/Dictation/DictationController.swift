@@ -26,6 +26,10 @@ final class DictationController {
     private(set) var levels: [Double] = Array(repeating: 0, count: DictationController.historyLength)
     /// Shown briefly below the pill the first few times.
     private(set) var showsHint = false
+    /// Download progress while the chosen model is still being set up (first use only).
+    private(set) var setupProgress: Double?
+    /// The faster model was used this time because the chosen one is still downloading.
+    private(set) var usedFallback = false
 
     var speed: DictationSpeed {
         didSet { UserDefaults.standard.set(speed.rawValue, forKey: Self.speedKey) }
@@ -58,6 +62,7 @@ final class DictationController {
     private var capture: DictationCapture?
     private var engine: (key: String, engine: any SpeechEngine)?
     private var prepareTask: Task<Void, Error>?
+    private var engineReady = false
     private var workTask: Task<Void, Never>?
     private var releaseTask: Task<Void, Never>?
     private var shortcutToken: UInt32?
@@ -150,16 +155,17 @@ final class DictationController {
         let samples = capture?.stop() ?? []
         capture = nil
         workTask?.cancel()
-        guard samples.count >= Self.minimumSamples else {
+        let speech = DictationAudio.trimmed(samples)
+        saveLastTake(samples)
+        guard speech.count >= Self.minimumSamples else {
             end(.nothingHeard)
             return
         }
         let vocabulary = model.settings.vocabulary
         workTask = Task {
             do {
-                let engine = prepareEngine()
-                try await prepareTask?.value
-                let output = try await engine.transcribe(samples: samples) { _ in }
+                let engine = try await readyEngine()
+                let output = try await engine.transcribe(samples: speech) { _ in }
                 let text = DictationText.finalize(output.segments, vocabulary: vocabulary)
                 guard !text.isEmpty else { return end(.nothingHeard) }
                 let result = await TextInserter.insert(text)
@@ -231,14 +237,55 @@ final class DictationController {
         if quality == settings.quality, !model.isTranscribingSomething {
             engine = nil
             prepareTask = nil
+            engineReady = true
             return model.engine
         }
         let key = "\(quality.rawValue)|\(settings.languages)|\(settings.vocabulary)"
         if let engine, engine.key == key { return engine.engine }
         let fresh = AppModel.makeEngine(settings: settings, quality: quality, european: model.european)
         engine = (key, fresh)
-        prepareTask = Task { try await fresh.prepare { _ in } }
+        engineReady = false
+        prepareTask = Task { [weak self] in
+            try await fresh.prepare { state in
+                guard case .downloading(let fraction) = state else { return }
+                Task { @MainActor in self?.setupProgress = fraction }
+            }
+            await MainActor.run {
+                self?.engineReady = true
+                self?.setupProgress = nil
+            }
+        }
         return fresh
+    }
+
+    /// The chosen engine if it's ready. If it's still downloading (first use of a new speed),
+    /// the app's own model answers now when it's ready, and the download carries on.
+    private func readyEngine() async throws -> any SpeechEngine {
+        let chosen = prepareEngine()
+        usedFallback = false
+        guard !engineReady else { return chosen }
+        if setupProgress != nil, model.modelPreparation == .ready, !model.isTranscribingSomething {
+            usedFallback = true
+            return model.engine
+        }
+        do {
+            try await prepareTask?.value
+        } catch {
+            engine = nil
+            prepareTask = nil
+            setupProgress = nil
+            throw error
+        }
+        return chosen
+    }
+
+    /// Keeps the most recent take on this Mac, to check what the microphone heard.
+    private func saveLastTake(_ samples: [Float]) {
+        let url = TranscriptStore.defaultRoot.appendingPathComponent("Dictation/last-take.wav")
+        Task.detached(priority: .utility) {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? DictationAudio.writeWAV(samples, to: url)
+        }
     }
 
     /// A separate model is a lot of memory: let it go after a few quiet minutes.

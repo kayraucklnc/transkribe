@@ -82,7 +82,14 @@ public actor TranscriptionEngine {
                 load: true,
                 download: false
             )
-            let whisper = try await WhisperKit(config)
+            let whisper: WhisperKit
+            do {
+                whisper = try await WhisperKit(config)
+            } catch {
+                // A damaged model would fail the same way forever: check its files again next time.
+                try? FileManager.default.removeItem(at: modelsDirectory.appendingPathComponent("\(model).ready"))
+                throw error
+            }
             FileManager.default.createFile(atPath: preparedMarker.path, contents: nil)
             if let european = self.european {
                 try? await european.prepare { fraction in onProgress(.downloading(fraction)) }
@@ -290,17 +297,39 @@ public actor TranscriptionEngine {
         onProgress: @escaping @Sendable (Preparation) -> Void
     ) async throws -> URL {
         let marker = directory.appendingPathComponent("\(model).ready")
-        if let saved = try? String(contentsOf: marker, encoding: .utf8),
-           FileManager.default.fileExists(atPath: saved) {
-            return URL(fileURLWithPath: saved)
+        if let saved = try? String(contentsOf: marker, encoding: .utf8) {
+            let folder = URL(fileURLWithPath: saved)
+            if ModelFiles.isComplete(folder) { return folder }
+            // Marked ready but files are missing (an interrupted download): fetch what's missing.
+            try? FileManager.default.removeItem(at: marker)
         }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        onProgress(.downloading(0))
-        let folder = try await WhisperKit.download(variant: model, downloadBase: directory) { progress in
-            onProgress(.downloading(progress.fractionCompleted))
+        return try await ModelDownloads.shared.folder(for: model) {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            for attempt in 1...2 {
+                onProgress(.downloading(0))
+                let folder = try await WhisperKit.download(variant: model, downloadBase: directory) { progress in
+                    onProgress(.downloading(progress.fractionCompleted))
+                }
+                if ModelFiles.isComplete(folder) {
+                    try folder.path.write(to: marker, atomically: true, encoding: .utf8)
+                    return folder
+                }
+                // Start the second try from scratch, in case a damaged file is being reused.
+                if attempt == 1 { try? FileManager.default.removeItem(at: folder) }
+            }
+            throw TranscriptionError.incompleteDownload
         }
-        try folder.path.write(to: marker, atomically: true, encoding: .utf8)
-        return folder
+    }
+}
+
+public enum TranscriptionError: LocalizedError, Equatable {
+    case incompleteDownload
+
+    public var errorDescription: String? {
+        switch self {
+        case .incompleteDownload:
+            "The speech model didn't download completely. Check your internet connection and try again."
+        }
     }
 }
 

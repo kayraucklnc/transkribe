@@ -83,3 +83,37 @@ public enum DictationLevel {
         }
     }
 }
+
+/// Cleans up a dictation take before it reaches the model.
+public enum DictationAudio {
+    /// Drops the silence before you start and after you stop talking (keeping a quarter second
+    /// either side), so the model doesn't invent words in the quiet.
+    public static func trimmed(_ samples: [Float], sampleRate: Double = 16_000) -> [Float] {
+        let frame = Int(sampleRate * 0.02)
+        guard frame > 0, samples.count >= frame else { return [] }
+        let loud: (Int) -> Bool = { start in
+            var sum: Float = 0
+            for index in start..<min(start + frame, samples.count) { sum += samples[index] * samples[index] }
+            return sqrt(sum / Float(frame)) > 0.008
+        }
+        let starts = Swift.stride(from: 0, to: samples.count, by: frame)
+        guard let first = starts.first(where: loud), let last = starts.reversed().first(where: loud) else { return [] }
+        let margin = Int(sampleRate * 0.25)
+        return Array(samples[max(0, first - margin)..<min(samples.count, last + frame + margin)])
+    }
+}
+
+extension DictationAudio {
+    /// 16-bit mono WAV.
+    public static func writeWAV(_ samples: [Float], to url: URL, sampleRate: Int = 16_000) throws {
+        var data = Data()
+        func append<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        let bytes = samples.count * 2
+        data.append(contentsOf: Array("RIFF".utf8)); append(UInt32(36 + bytes))
+        data.append(contentsOf: Array("WAVEfmt ".utf8)); append(UInt32(16)); append(UInt16(1)); append(UInt16(1))
+        append(UInt32(sampleRate)); append(UInt32(sampleRate * 2)); append(UInt16(2)); append(UInt16(16))
+        data.append(contentsOf: Array("data".utf8)); append(UInt32(bytes))
+        for sample in samples { append(Int16(max(-1, min(1, sample)) * Float(Int16.max))) }
+        try data.write(to: url, options: .atomic)
+    }
+}

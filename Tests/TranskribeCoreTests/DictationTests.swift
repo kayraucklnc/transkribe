@@ -107,3 +107,24 @@ import Testing
         #expect(decoded == combo)
     }
 }
+
+@Suite struct DictationAudioTests {
+    private func tone(_ seconds: Double, amplitude: Float) -> [Float] {
+        (0..<Int(seconds * 16_000)).map { amplitude * sin(Float($0) * 0.2) }
+    }
+
+    @Test func trimsSilenceAroundSpeechKeepingAMargin() {
+        let samples = tone(2, amplitude: 0) + tone(1, amplitude: 0.3) + tone(3, amplitude: 0.001)
+        let trimmed = DictationAudio.trimmed(samples)
+        #expect(abs(Double(trimmed.count) / 16_000 - 1.5) < 0.1)
+    }
+
+    @Test func keepsEverythingWhenItIsAllSpeech() {
+        let samples = tone(1, amplitude: 0.3)
+        #expect(DictationAudio.trimmed(samples).count == samples.count)
+    }
+
+    @Test func silenceTrimsToNothing() {
+        #expect(DictationAudio.trimmed(tone(2, amplitude: 0.0005)).isEmpty)
+    }
+}

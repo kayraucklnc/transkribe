@@ -79,10 +79,26 @@ struct DictationPill: View {
                 Waveform(levels: controller.levels)
                     .transition(.opacity)
             case .transcribing:
-                Thinking()
+                if let progress = controller.setupProgress {
+                    // First use of a new speed: say so instead of looking stuck.
+                    HStack(spacing: 8) {
+                        ProgressView(value: progress)
+                            .progressViewStyle(.circular)
+                            .controlSize(.mini)
+                            .tint(.white)
+                        Text("Getting \(controller.speed.title) ready · \(progress.formatted(.percent.precision(.fractionLength(0))))")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .monospacedDigit()
+                    }
                     .transition(.opacity)
+                } else {
+                    Thinking()
+                        .transition(.opacity)
+                }
             case .finished(let outcome):
-                Result(outcome: outcome)
+                Result(outcome: outcome, note: controller.usedFallback && controller.setupProgress != nil
+                       ? "\(controller.speed.title) is still downloading" : nil)
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
             case .hidden:
                 EmptyView()
@@ -145,6 +161,7 @@ private struct Thinking: View {
 
 private struct Result: View {
     let outcome: DictationController.Outcome
+    var note: String?
 
     var body: some View {
         HStack(spacing: 7) {
@@ -156,6 +173,12 @@ private struct Result: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.white)
                 .lineLimit(1)
+            if let note {
+                Text("· \(note)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
+            }
         }
     }
 
