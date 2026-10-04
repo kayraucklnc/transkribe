@@ -10,9 +10,10 @@ struct ConversationHeader: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            TextField("Untitled", text: $title)
+            TextField("Untitled", text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 28, weight: .bold))
+                .font(.system(size: 26, weight: .bold))
+                .lineLimit(1...2)
                 .multilineTextAlignment(.center)
                 .onSubmit { model.rename(transcript.id, to: title) }
             Text(meta)

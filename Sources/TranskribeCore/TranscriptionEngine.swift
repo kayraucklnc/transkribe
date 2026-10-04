@@ -16,6 +16,8 @@ public actor TranscriptionEngine {
     public struct Output: Sendable {
         public var segments: [RawSegment]
         public var language: String?
+        /// Characters of text per detected language, to pick the language of a long recording.
+        public var languageWeights: [String: Int] = [:]
     }
 
     private let model: String
@@ -140,10 +142,22 @@ public actor TranscriptionEngine {
                 )
             }
             .sorted { $0.start < $1.start }
-        return Output(segments: segments, language: Self.dominantLanguage(results.map(\.language)))
+        let weights = results.reduce(into: [String: Int]()) { $0[$1.language, default: 0] += $1.text.count }
+        return Output(segments: segments, language: Self.dominantLanguage(weights: weights), languageWeights: weights)
     }
 
     // MARK: - Helpers
+
+    /// The language with the most transcribed text. Counting chunks instead would let short or
+    /// silent stretches (which Whisper tends to label English) outvote the actual conversation.
+    public static func dominantLanguage(weights: [String: Int]) -> String? {
+        weights.filter { !$0.key.isEmpty && $0.value > 0 }
+            .max { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) }?.key
+    }
+
+    public static func merge(_ a: [String: Int], _ b: [String: Int]) -> [String: Int] {
+        a.merging(b, uniquingKeysWith: +)
+    }
 
     public static func dominantLanguage(_ languages: [String]) -> String? {
         let counts = Dictionary(languages.filter { !$0.isEmpty }.map { ($0, 1) }, uniquingKeysWith: +)

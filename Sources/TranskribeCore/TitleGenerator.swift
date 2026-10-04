@@ -1,7 +1,7 @@
 import Foundation
 
 public enum TitleGenerator {
-    static let maxWords = 8
+    static let maxWords = 6
     public static let recordingPrefix = "Recording · "
 
     public static func title(forFile url: URL) -> String {

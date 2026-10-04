@@ -21,6 +21,7 @@ public final class TrackTranscriber: @unchecked Sendable {
         public var segments: [RawSegment]
         public var turns: [SpeakerTurn]
         public var language: String?
+        public var languageWeights: [String: Int]
     }
 
     private let source: AudioSource
@@ -57,7 +58,7 @@ public final class TrackTranscriber: @unchecked Sendable {
         var committed = resume
         var committedUntil = resumeUntil
         var diarizedUntil: TimeInterval = 0
-        var languages: [String] = []
+        var languageWeights: [String: Int] = [:]
 
         while true {
             try Task.checkCancellation()
@@ -88,19 +89,20 @@ public final class TrackTranscriber: @unchecked Sendable {
                                               turns: diarization?.turns() ?? [], language: nil))
                 }
             }
-            if let language = output.language { languages.append(language) }
+            languageWeights = TranscriptionEngine.merge(languageWeights, output.languageWeights)
             let shifted = output.segments.map { Self.shift($0, by: window.start) }
             let result = planner.commit(shifted, in: window, previous: committed.last)
             committed += result.segments
             committedUntil = result.committedUntil
             await onProgress(Progress(committed: committed, pending: [], committedUntil: committedUntil,
                                       availableDuration: available, turns: diarization?.turns() ?? [],
-                                      language: TranscriptionEngine.dominantLanguage(languages)))
+                                      language: TranscriptionEngine.dominantLanguage(weights: languageWeights)))
         }
 
         try diarization?.finish()
         return Result(segments: committed, turns: diarization?.turns() ?? [],
-                      language: TranscriptionEngine.dominantLanguage(languages))
+                      language: TranscriptionEngine.dominantLanguage(weights: languageWeights),
+                      languageWeights: languageWeights)
     }
 
     static func shift(_ segment: RawSegment, by offset: TimeInterval) -> RawSegment {

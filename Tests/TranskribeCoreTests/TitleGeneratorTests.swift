@@ -21,7 +21,7 @@ import Testing
 
     @Test func suggestsTitleFromFirstWords() {
         let segments = [Segment(start: 0, end: 1, text: " Okay so today we are going to talk about the roadmap for next quarter.")]
-        #expect(TitleGenerator.suggestedTitle(from: segments) == "Okay so today we are going to talk…")
+        #expect(TitleGenerator.suggestedTitle(from: segments) == "Okay so today we are going…")
         #expect(TitleGenerator.suggestedTitle(from: []) == nil)
     }
 }

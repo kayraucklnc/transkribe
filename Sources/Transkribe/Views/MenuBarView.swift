@@ -59,14 +59,10 @@ struct MenuBarView: View {
 struct MenuBarLabel: View {
     @Environment(AppModel.self) private var model
 
+    // Keep this static: a menu bar label that changes every second (like a running timer)
+    // makes SwiftUI rebuild the status item in a loop that pins the CPU and leaks memory.
+    // The timer lives inside the menu instead.
     var body: some View {
-        if case .recording(let since) = model.recordingState {
-            HStack(spacing: 4) {
-                Image(systemName: "record.circle.fill")
-                ElapsedTime(since: since).monospacedDigit()
-            }
-        } else {
-            Image(systemName: "waveform")
-        }
+        Image(systemName: model.isRecording ? "record.circle.fill" : "waveform")
     }
 }

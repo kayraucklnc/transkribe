@@ -15,3 +15,20 @@ import Testing
         #expect(TranscriptionEngine.dominantLanguage(["en", "tr"]) == "en")
     }
 }
+
+@Suite struct WeightedLanguageTests {
+    @Test func mostSpokenTextWinsOverMostChunks() {
+        // Many short (often silent) chunks guessed as English, one long Turkish stretch.
+        let weights = ["en": 40, "tr": 2_400]
+        #expect(TranscriptionEngine.dominantLanguage(weights: weights) == "tr")
+    }
+
+    @Test func emptyWeightsHaveNoLanguage() {
+        #expect(TranscriptionEngine.dominantLanguage(weights: [:]) == nil)
+        #expect(TranscriptionEngine.dominantLanguage(weights: ["en": 0]) == nil)
+    }
+
+    @Test func mergesWeights() {
+        #expect(TranscriptionEngine.merge(["tr": 10], ["tr": 5, "en": 3]) == ["tr": 15, "en": 3])
+    }
+}

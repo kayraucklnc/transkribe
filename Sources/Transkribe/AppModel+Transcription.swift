@@ -70,6 +70,15 @@ extension AppModel {
         defer { activity[id] = nil }
         do {
             try await engine.prepare(onProgress: { [weak self] in self?.reportPreparation($0) })
+            // A recording cut off by a force quit or crash is rebuilt from its live copy.
+            var repaired = false
+            for track in transcript.tracks {
+                repaired = try await TrackRepair.repairIfNeeded(store.audioURL(for: transcript, track: track)) || repaired
+            }
+            if repaired || transcript.duration == 0 {
+                let length = await duration(of: transcript)
+                update(id, persist: true) { $0.duration = length }
+            }
             let sources = transcript.tracks.map { track in
                 (track, FileAudioSource(url: store.audioURL(for: transcript, track: track)) as AudioSource)
             }
@@ -121,10 +130,12 @@ extension AppModel {
                                      segments: Self.label(result.segments, track: track, turns: result.turns))
         }
         let segments = TrackMerger.merge(tracks)
-        let language = TranscriptionEngine.dominantLanguage(results.values.compactMap(\.language))
+        let language = TranscriptionEngine.dominantLanguage(
+            weights: results.values.map(\.languageWeights).reduce([:], TranscriptionEngine.merge)
+        )
         update(id, persist: true) {
             $0.segments = segments
-            $0.language = language ?? $0.language
+            $0.language = language ?? $0.language // final, text-weighted choice replaces live guesses
             $0.status = .done
             if $0.title.hasPrefix(TitleGenerator.recordingPrefix), let suggestion = TitleGenerator.suggestedTitle(from: segments) {
                 $0.title = suggestion
