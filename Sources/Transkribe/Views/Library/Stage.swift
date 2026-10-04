@@ -17,44 +17,56 @@ enum Stage {
     static let hairline = Color.primary.opacity(0.09)
 }
 
-/// Fine lines that drift like a resting sound wave and swell with your voice while recording.
+/// Fine sound lines behind the buttons. Still at rest; while recording they follow your voice,
+/// redrawn only when the level changes — nothing runs when nothing happens.
 struct SoundField: View {
     var level: Double
     var isRecording: Bool
-    @Environment(\.controlActiveState) private var activeState
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: activeState == .inactive)) { context in
-            let time = context.date.timeIntervalSinceReferenceDate
-            Canvas { canvas, size in
-                let mid = size.height / 2
-                let lines = 6
-                for line in 0..<lines {
-                    let index = Double(line)
-                    let swell = isRecording ? 16 + level * 120 : 14 + 6 * sin(time * 0.6 + index)
-                    let amplitude = swell * (1 - index * 0.11)
-                    let frequency = 2.2 + index * 0.35
-                    let speed = (isRecording ? 2.4 : 0.55) + index * 0.12
-                    var path = Path()
-                    let steps = 90
-                    for step in 0...steps {
-                        let x = Double(step) / Double(steps)
-                        // Pinned at the edges, free in the middle (behind the record button).
-                        let envelope = pow(sin(.pi * x), 2.4)
-                        let y = mid + amplitude * envelope * sin(x * .pi * frequency + time * speed + index * 1.3)
-                        let point = CGPoint(x: x * size.width, y: y)
-                        step == 0 ? path.move(to: point) : path.addLine(to: point)
-                    }
-                    let tint: Color = isRecording && line == 0 ? Theme.record : .primary
-                    canvas.stroke(path, with: .color(tint.opacity(line == 0 ? 0.55 : 0.16 - index * 0.015)),
-                                  lineWidth: line == 0 ? 1.6 : 1)
+        Canvas { canvas, size in
+            let mid = size.height / 2
+            for line in 0..<6 {
+                let index = Double(line)
+                let swell = isRecording ? 10 + level * 110 : 16
+                let amplitude = swell * (1 - index * 0.12)
+                let frequency = 2.2 + index * 0.35
+                var path = Path()
+                let steps = 90
+                for step in 0...steps {
+                    let x = Double(step) / Double(steps)
+                    // Pinned at the edges, free in the middle (behind the record button).
+                    let envelope = pow(sin(.pi * x), 2.4)
+                    let y = mid + amplitude * envelope * sin(x * .pi * frequency + index * 1.3)
+                    let point = CGPoint(x: x * size.width, y: y)
+                    step == 0 ? path.move(to: point) : path.addLine(to: point)
                 }
+                let tint: Color = line == 0 ? Theme.record : .primary
+                canvas.stroke(path, with: .color(tint.opacity(line == 0 ? 0.6 : 0.14 - index * 0.015)),
+                              lineWidth: line == 0 ? 1.6 : 1)
             }
-            // Drawn on the GPU: on the CPU, six full-width strokes per frame cost a quarter of a core.
-            .drawingGroup()
         }
+        .animation(.easeOut(duration: 0.12), value: level)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// Home's backdrop: deep ink with one warm light rising behind the record button.
+struct StageBackdrop: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let dark = scheme == .dark
+        ZStack {
+            Stage.canvas
+            RadialGradient(colors: dark
+                           ? [Color(red: 0.42, green: 0.06, blue: 0.11).opacity(0.85), Color(red: 0.16, green: 0.04, blue: 0.10).opacity(0.5), .clear]
+                           : [Color(red: 1.0, green: 0.80, blue: 0.76).opacity(0.75), Color(red: 1.0, green: 0.91, blue: 0.86).opacity(0.4), .clear],
+                           center: UnitPoint(x: 0.5, y: 0.28), startRadius: 10, endRadius: 620)
+            LinearGradient(colors: [.clear, Stage.canvas.opacity(0.9)], startPoint: UnitPoint(x: 0.5, y: 0.45), endPoint: .bottom)
+        }
+        .ignoresSafeArea()
     }
 }
 
@@ -70,7 +82,7 @@ struct ShutterButton: View {
         let level = CGFloat(min(1, pow(Double(model.levels.last ?? 0) * 6, 0.7)))
         Button(action: model.toggleRecording) {
             ZStack {
-                Heartbeat(size: size, isRecording: recording, level: level)
+                Heartbeat(size: size, isRecording: recording, level: level, isHovered: isHovered)
                 Circle()
                     .strokeBorder(Color.primary.opacity(isHovered ? 0.55 : 0.32), lineWidth: 3.5)
                 RoundedRectangle(cornerRadius: recording ? size * 0.09 : size * 0.4, style: .continuous)
@@ -100,64 +112,34 @@ struct ShutterButton: View {
     }
 }
 
-/// Two quick rings every couple of seconds, like a pulse; while recording, rings follow your voice.
+/// A soft halo around the record button: one pulse when you point at it, and while recording
+/// it breathes with your voice. Nothing animates on its own.
 private struct Heartbeat: View {
     let size: CGFloat
     let isRecording: Bool
     let level: CGFloat
+    let isHovered: Bool
+    @State private var pulse = false
 
     var body: some View {
         ZStack {
-            if isRecording {
-                VoiceRings(size: size, level: level)
-            } else {
-                Pulse(delay: 0)
-                Pulse(delay: 0.22)
-            }
+            Circle()
+                .fill(Theme.record.opacity(isRecording ? 0.14 + Double(level) * 0.3 : 0.1))
+                .scaleEffect(isRecording ? 1.12 + level * 0.45 : 1.12)
+                .blur(radius: 18)
+                .animation(.easeOut(duration: 0.15), value: level)
+            Circle()
+                .stroke(Theme.record.opacity(pulse ? 0 : 0.6), lineWidth: 1.5)
+                .scaleEffect(pulse ? 1.45 : 1)
         }
         .frame(width: size, height: size)
         .allowsHitTesting(false)
-    }
-}
-
-/// One ring of the idle heartbeat: expands and fades, then rests until the next beat.
-private struct Pulse: View {
-    let delay: Double
-
-    var body: some View {
-        Circle()
-            .stroke(Theme.record, lineWidth: 1.5)
-            .keyframeAnimator(initialValue: 0.0, repeating: true) { ring, progress in
-                ring
-                    .scaleEffect(1 + progress * 0.42)
-                    .opacity(progress == 0 ? 0 : (1 - progress) * 0.5)
-            } keyframes: { _ in
-                LinearKeyframe(0, duration: delay)
-                CubicKeyframe(1, duration: 1.2)
-                LinearKeyframe(0, duration: 0.001)
-                LinearKeyframe(0, duration: 1.2 - delay)
-            }
-    }
-}
-
-/// While recording: rings that keep flowing outwards, stronger when you speak.
-private struct VoiceRings: View {
-    let size: CGFloat
-    let level: CGFloat
-    @Environment(\.controlActiveState) private var activeState
-
-    var body: some View {
-        TimelineView(.animation(paused: activeState == .inactive)) { context in
-            let time = context.date.timeIntervalSinceReferenceDate
-            ZStack {
-                ForEach(0..<2, id: \.self) { beat in
-                    let progress = (time * 0.9 + Double(beat) * 0.5).truncatingRemainder(dividingBy: 1)
-                    Circle()
-                        .stroke(Theme.record.opacity((1 - progress) * (0.35 + Double(level) * 0.5)), lineWidth: 1.5)
-                        .scaleEffect(1 + progress * (0.35 + level * 0.5))
-                }
-            }
+        .onChange(of: isHovered) { _, hovering in
+            guard hovering, !isRecording else { return }
+            pulse = false
+            withAnimation(.easeOut(duration: 0.9)) { pulse = true }
         }
+        .onAppear { pulse = true }
     }
 }
 

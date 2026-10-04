@@ -64,7 +64,7 @@ struct LibraryView: View {
             .frame(maxWidth: 980)
             .frame(maxWidth: .infinity)
         }
-        .background(Stage.canvas)
+        .background(StageBackdrop())
         .toolbarBackground(.hidden, for: .windowToolbar)
         .searchable(text: $model.query, isPresented: $isSearching, placement: .toolbar, prompt: "Search Conversations")
         .sheet(isPresented: $isAsking) {

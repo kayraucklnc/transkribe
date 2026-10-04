@@ -120,7 +120,8 @@ final class AppModel {
 
     /// Instant → macOS's recognizer; Balanced/Best → Whisper (turbo / full), with the European
     /// model for English, Italian and similar languages.
-    static func makeEngine(settings: TranscriptionSettings, quality: TranscriptionQuality, european: ParakeetEngine?) -> any SpeechEngine {
+    static func makeEngine(settings: TranscriptionSettings, quality: TranscriptionQuality, european: ParakeetEngine?,
+                           usesNeuralEngine: Bool = true) -> any SpeechEngine {
         let languages = Set(settings.languages.isEmpty ? Array(TranscriptionEngine.supportedLanguages) : settings.languages)
         let usesEuropean = languages.contains(where: EngineCatalog.usesEuropeanModel)
         switch quality {
@@ -130,10 +131,12 @@ final class AppModel {
             }
             fallthrough
         case .balanced:
-            return TranscriptionEngine(languages: languages, vocabulary: settings.vocabulary, european: usesEuropean ? european : nil)
+            return TranscriptionEngine(languages: languages, vocabulary: settings.vocabulary, european: usesEuropean ? european : nil,
+                                       usesNeuralEngine: usesNeuralEngine)
         case .best:
             return TranscriptionEngine(model: TranscriptionEngine.bestModel, languages: languages,
-                                       vocabulary: settings.vocabulary, european: usesEuropean ? european : nil)
+                                       vocabulary: settings.vocabulary, european: usesEuropean ? european : nil,
+                                       usesNeuralEngine: usesNeuralEngine)
         }
     }
 

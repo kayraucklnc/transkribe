@@ -89,7 +89,8 @@ struct AskBar: View {
             HStack(spacing: 12) {
                 Image(systemName: "sparkle")
                     .font(.system(size: 15, weight: .semibold))
-                    .symbolEffect(.pulse, options: .repeating.speed(0.4), isActive: isHovered)
+                    .foregroundStyle(Theme.record)
+                    .symbolEffect(.bounce, value: isHovered)
                 Text("Ask anything about your conversations")
                     .font(.system(size: 15))
                     .foregroundStyle(.secondary)
@@ -98,11 +99,12 @@ struct AskBar: View {
             }
             .padding(.horizontal, 20)
             .frame(height: 52)
-            .background(Capsule().fill(Stage.card))
-            .overlay(Capsule().strokeBorder(Stage.hairline, lineWidth: 1))
+            .background(Capsule().fill(.ultraThinMaterial))
+            .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
             .overlay {
-                EdgeLight()
-                    .opacity(isHovered ? 1 : 0.65)
+                Capsule()
+                    .strokeBorder(LinearGradient(colors: [.primary.opacity(isHovered ? 0.4 : 0.22), .primary.opacity(0.04)],
+                                                 startPoint: .top, endPoint: .bottom), lineWidth: 1)
                     .allowsHitTesting(false)
             }
             .scaleEffect(isHovered ? 1.012 : 1)
@@ -112,27 +114,5 @@ struct AskBar: View {
         .onHover { hovering in withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { isHovered = hovering } }
         .keyboardShortcut("k")
         .help("Ask questions across every conversation, like “What did Hakan say about the price?”")
-    }
-}
-
-/// A short streak of light circling a capsule's border. The gradient only rotates, so Core Animation
-/// runs it at the display's refresh rate without redrawing anything on the main thread.
-private struct EdgeLight: View {
-    @State private var spinning = false
-
-    var body: some View {
-        GeometryReader { proxy in
-            let side = hypot(proxy.size.width, proxy.size.height)
-            AngularGradient(stops: [.init(color: .clear, location: 0), .init(color: .primary.opacity(0.7), location: 0.04),
-                                    .init(color: .clear, location: 0.1), .init(color: .clear, location: 1)],
-                            center: .center)
-                .frame(width: side, height: side)
-                .rotationEffect(.degrees(spinning ? 360 : 0))
-                .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-        }
-        .mask(Capsule().strokeBorder(lineWidth: 1.2))
-        .onAppear {
-            withAnimation(.linear(duration: 7).repeatForever(autoreverses: false)) { spinning = true }
-        }
     }
 }

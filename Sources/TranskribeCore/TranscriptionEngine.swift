@@ -28,6 +28,9 @@ public actor TranscriptionEngine {
     }
 
     private let model: String
+    /// The Neural Engine is fastest for long audio, but macOS first spends minutes optimizing the
+    /// model for it. The GPU is ready in seconds, which suits short dictation.
+    private let usesNeuralEngine: Bool
     private let modelsDirectory: URL
     private let languages: Set<String>
     private let vocabulary: [String]
@@ -45,8 +48,10 @@ public actor TranscriptionEngine {
         modelsDirectory: URL = TranscriptionEngine.defaultModelsDirectory,
         languages: Set<String> = TranscriptionEngine.supportedLanguages,
         vocabulary: [String] = [],
-        european: ParakeetEngine? = nil
+        european: ParakeetEngine? = nil,
+        usesNeuralEngine: Bool = true
     ) {
+        self.usesNeuralEngine = usesNeuralEngine
         self.model = model
         self.modelsDirectory = modelsDirectory
         self.languages = languages
@@ -68,7 +73,7 @@ public actor TranscriptionEngine {
         if let loaded { return loaded }
         if let preparing { return try await preparing.value }
 
-        let task = Task { [model, modelsDirectory] in
+        let task = Task { [model, modelsDirectory, usesNeuralEngine] in
             let folder = try await Self.modelFolder(model: model, in: modelsDirectory, onProgress: onProgress)
             let preparedMarker = modelsDirectory.appendingPathComponent("\(model).prepared")
             onProgress(.loading(firstTime: !FileManager.default.fileExists(atPath: preparedMarker.path)))
@@ -76,9 +81,11 @@ public actor TranscriptionEngine {
                 modelFolder: folder.path,
                 // Keep the tokenizer next to the model; the default (~/Documents) triggers a privacy prompt.
                 tokenizerFolder: modelsDirectory,
+                computeOptions: usesNeuralEngine ? nil
+                    : ModelComputeOptions(melCompute: .cpuAndGPU, audioEncoderCompute: .cpuAndGPU, textDecoderCompute: .cpuAndGPU),
                 verbose: false,
                 logLevel: .error,
-                prewarm: true,
+                prewarm: usesNeuralEngine,
                 load: true,
                 download: false
             )

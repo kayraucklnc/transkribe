@@ -275,7 +275,8 @@ final class DictationController {
     private func prepareEngine() -> any SpeechEngine {
         let settings = model.settings
         let quality = speed.quality(for: settings.languages)
-        if quality == settings.quality, !model.isTranscribingSomething {
+        // Share the app's engine only once it's fully loaded; otherwise dictation keeps its own.
+        if quality == settings.quality, model.modelPreparation == .ready, !model.isTranscribingSomething {
             engine = nil
             prepareTask = nil
             engineReady = true
@@ -284,7 +285,7 @@ final class DictationController {
         let key = "\(quality.rawValue)|\(settings.languages)|\(settings.vocabulary)"
         if let engine, engine.key == key { return engine.engine }
         // Short takes don't need the separate European model; Whisper alone is quicker to load and answer.
-        let fresh = AppModel.makeEngine(settings: settings, quality: quality, european: nil)
+        let fresh = AppModel.makeEngine(settings: settings, quality: quality, european: nil, usesNeuralEngine: false)
         engine = (key, fresh)
         engineReady = false
         prepareTask = Task { [weak self] in
