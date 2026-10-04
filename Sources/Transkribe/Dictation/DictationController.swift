@@ -26,8 +26,16 @@ final class DictationController {
     private(set) var levels: [Double] = Array(repeating: 0, count: DictationController.historyLength)
     /// Shown briefly below the pill the first few times.
     private(set) var showsHint = false
-    /// Download progress while the chosen model is still being set up (first use only).
-    private(set) var setupProgress: Double?
+    /// What the chosen model is doing before it can listen (downloading or loading), if anything.
+    private(set) var setup: TranscriptionEngine.Preparation?
+    var setupProgress: Double? {
+        if case .downloading(let fraction) = setup { return fraction }
+        return nil
+    }
+    var isLoadingModel: Bool {
+        if case .loading = setup { return true }
+        return false
+    }
     /// The faster model was used this time because the chosen one is still downloading.
     private(set) var usedFallback = false
 
@@ -54,6 +62,9 @@ final class DictationController {
     private static let speedKey = "dictationSpeed"
     private static let shortcutKey = "dictationKeyCombo"
     private static let usesKey = "dictationUses"
+    private static let holdThreshold: TimeInterval = 0.6
+    private static let transcriptionTimeout: Duration = .seconds(90)
+    private var startedAt = Date.distantPast
     private static let minimumSamples = Int(PCMStore.sampleRate * 0.3)
     private static let maximumDuration: Duration = .seconds(600)
 
@@ -94,7 +105,8 @@ final class DictationController {
             shortcutIsAvailable = true
             return
         }
-        shortcutToken = HotKeys.shared.register(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers) { [weak self] in
+        shortcutToken = HotKeys.shared.register(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers,
+                                                onRelease: { [weak self] in self?.shortcutReleased() }) { [weak self] in
             self?.toggle()
         }
         shortcutIsAvailable = shortcutToken != nil
@@ -102,11 +114,29 @@ final class DictationController {
 
     // MARK: - Flow
 
+    /// Tap the shortcut to start and again to finish, or hold it while you talk and let go.
     func toggle() {
         switch phase {
         case .hidden, .finished: start()
-        case .listening: finish()
+        case .listening:
+            // A second press right after starting is a bounce, not "I'm done".
+            guard Date().timeIntervalSince(startedAt) > 0.4 else { return }
+            finish()
         case .transcribing: break
+        }
+    }
+
+    private func shortcutReleased() {
+        // Held for a while: push-to-talk, so letting go means done.
+        if phase == .listening, Date().timeIntervalSince(startedAt) > Self.holdThreshold { finish() }
+    }
+
+    /// Preloads the dictation model in the background so the first take is instant.
+    func warmUp() {
+        Task {
+            try? await Task.sleep(for: .seconds(8))
+            guard phase == .hidden else { return }
+            prepareEngine()
         }
     }
 
@@ -120,6 +150,7 @@ final class DictationController {
         showsHint = uses < 5
         UserDefaults.standard.set(uses + 1, forKey: Self.usesKey)
         phase = .listening
+        startedAt = Date()
         panel.show(controller: self)
         claimSessionKeys()
 
@@ -149,7 +180,7 @@ final class DictationController {
 
     func finish() {
         guard phase == .listening else { return }
-        releaseSessionKeys()
+        claimEscapeOnly()
         showsHint = false
         phase = .transcribing
         let samples = capture?.stop() ?? []
@@ -165,7 +196,9 @@ final class DictationController {
         workTask = Task {
             do {
                 let engine = try await readyEngine()
-                let output = try await engine.transcribe(samples: speech) { _ in }
+                let output = try await withTimeout(Self.transcriptionTimeout) {
+                    try await engine.transcribe(samples: speech) { _ in }
+                }
                 let text = DictationText.finalize(output.segments, vocabulary: vocabulary)
                 guard !text.isEmpty else { return end(.nothingHeard) }
                 let result = await TextInserter.insert(text)
@@ -223,6 +256,14 @@ final class DictationController {
         sessionTokens = keys.compactMap { HotKeys.shared.register(keyCode: $0.0, modifiers: 0, action: $0.1) }
     }
 
+    /// While the words are being worked out, Esc still cancels.
+    private func claimEscapeOnly() {
+        releaseSessionKeys()
+        if let token = HotKeys.shared.register(keyCode: kVK_Escape, modifiers: 0, action: { [weak self] in self?.cancel() }) {
+            sessionTokens = [token]
+        }
+    }
+
     private func releaseSessionKeys() {
         sessionTokens.forEach { HotKeys.shared.unregister($0) }
         sessionTokens = []
@@ -242,17 +283,17 @@ final class DictationController {
         }
         let key = "\(quality.rawValue)|\(settings.languages)|\(settings.vocabulary)"
         if let engine, engine.key == key { return engine.engine }
-        let fresh = AppModel.makeEngine(settings: settings, quality: quality, european: model.european)
+        // Short takes don't need the separate European model; Whisper alone is quicker to load and answer.
+        let fresh = AppModel.makeEngine(settings: settings, quality: quality, european: nil)
         engine = (key, fresh)
         engineReady = false
         prepareTask = Task { [weak self] in
             try await fresh.prepare { state in
-                guard case .downloading(let fraction) = state else { return }
-                Task { @MainActor in self?.setupProgress = fraction }
+                Task { @MainActor in self?.setup = state }
             }
             await MainActor.run {
                 self?.engineReady = true
-                self?.setupProgress = nil
+                self?.setup = nil
             }
         }
         return fresh
@@ -273,7 +314,7 @@ final class DictationController {
         } catch {
             engine = nil
             prepareTask = nil
-            setupProgress = nil
+            setup = nil
             throw error
         }
         return chosen
@@ -292,10 +333,27 @@ final class DictationController {
     private func scheduleRelease() {
         releaseTask?.cancel()
         releaseTask = Task {
-            try? await Task.sleep(for: .seconds(300))
+            try? await Task.sleep(for: .seconds(1800))
             guard !Task.isCancelled, phase == .hidden else { return }
             engine = nil
             prepareTask = nil
         }
+    }
+}
+
+struct DictationTimeout: LocalizedError {
+    var errorDescription: String? { "That took too long. Try again." }
+}
+
+/// Runs `work`, giving up after `limit`.
+private func withTimeout<T: Sendable>(_ limit: Duration, _ work: @escaping @Sendable () async throws -> T) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await work() }
+        group.addTask {
+            try await Task.sleep(for: limit)
+            throw DictationTimeout()
+        }
+        defer { group.cancelAll() }
+        return try await group.next()!
     }
 }

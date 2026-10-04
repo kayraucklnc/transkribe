@@ -50,6 +50,8 @@ struct SoundField: View {
                                   lineWidth: line == 0 ? 1.6 : 1)
                 }
             }
+            // Drawn on the GPU: on the CPU, six full-width strokes per frame cost a quarter of a core.
+            .drawingGroup()
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -103,26 +105,59 @@ private struct Heartbeat: View {
     let size: CGFloat
     let isRecording: Bool
     let level: CGFloat
+
+    var body: some View {
+        ZStack {
+            if isRecording {
+                VoiceRings(size: size, level: level)
+            } else {
+                Pulse(delay: 0)
+                Pulse(delay: 0.22)
+            }
+        }
+        .frame(width: size, height: size)
+        .allowsHitTesting(false)
+    }
+}
+
+/// One ring of the idle heartbeat: expands and fades, then rests until the next beat.
+private struct Pulse: View {
+    let delay: Double
+
+    var body: some View {
+        Circle()
+            .stroke(Theme.record, lineWidth: 1.5)
+            .keyframeAnimator(initialValue: 0.0, repeating: true) { ring, progress in
+                ring
+                    .scaleEffect(1 + progress * 0.42)
+                    .opacity(progress == 0 ? 0 : (1 - progress) * 0.5)
+            } keyframes: { _ in
+                LinearKeyframe(0, duration: delay)
+                CubicKeyframe(1, duration: 1.2)
+                LinearKeyframe(0, duration: 0.001)
+                LinearKeyframe(0, duration: 1.2 - delay)
+            }
+    }
+}
+
+/// While recording: rings that keep flowing outwards, stronger when you speak.
+private struct VoiceRings: View {
+    let size: CGFloat
+    let level: CGFloat
     @Environment(\.controlActiveState) private var activeState
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 40, paused: activeState == .inactive)) { context in
+        TimelineView(.animation(paused: activeState == .inactive)) { context in
             let time = context.date.timeIntervalSinceReferenceDate
             ZStack {
                 ForEach(0..<2, id: \.self) { beat in
-                    let phase = isRecording
-                        ? (time * 0.9 + Double(beat) * 0.5).truncatingRemainder(dividingBy: 1)
-                        : max(0, ((time / 2.4).truncatingRemainder(dividingBy: 1) - Double(beat) * 0.12) / 0.55)
-                    let progress = min(1, phase)
+                    let progress = (time * 0.9 + Double(beat) * 0.5).truncatingRemainder(dividingBy: 1)
                     Circle()
-                        .stroke(Theme.record.opacity((1 - progress) * (isRecording ? 0.35 + Double(level) * 0.5 : 0.45)),
-                                lineWidth: 1.5)
-                        .scaleEffect(1 + progress * (isRecording ? 0.35 + level * 0.5 : 0.42))
+                        .stroke(Theme.record.opacity((1 - progress) * (0.35 + Double(level) * 0.5)), lineWidth: 1.5)
+                        .scaleEffect(1 + progress * (0.35 + level * 0.5))
                 }
             }
-            .frame(width: size, height: size)
         }
-        .allowsHitTesting(false)
     }
 }
 

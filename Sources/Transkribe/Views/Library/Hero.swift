@@ -83,7 +83,6 @@ struct Hero: View {
 struct AskBar: View {
     @Binding var isPresented: Bool
     @State private var isHovered = false
-    @Environment(\.controlActiveState) private var activeState
 
     var body: some View {
         Button { isPresented = true } label: {
@@ -102,16 +101,9 @@ struct AskBar: View {
             .background(Capsule().fill(Stage.card))
             .overlay(Capsule().strokeBorder(Stage.hairline, lineWidth: 1))
             .overlay {
-                TimelineView(.animation(minimumInterval: 1 / 30, paused: activeState == .inactive)) { context in
-                    let angle = (context.date.timeIntervalSinceReferenceDate / 5).truncatingRemainder(dividingBy: 1) * 360
-                    Capsule()
-                        .strokeBorder(AngularGradient(stops: [.init(color: .clear, location: 0), .init(color: .primary.opacity(0.55), location: 0.06),
-                                                              .init(color: .clear, location: 0.14), .init(color: .clear, location: 1)],
-                                                      center: .center, angle: .degrees(angle)),
-                                      lineWidth: 1.2)
-                }
-                .opacity(isHovered ? 1 : 0.6)
-                .allowsHitTesting(false)
+                EdgeLight()
+                    .opacity(isHovered ? 1 : 0.65)
+                    .allowsHitTesting(false)
             }
             .scaleEffect(isHovered ? 1.012 : 1)
             .contentShape(Capsule())
@@ -120,5 +112,27 @@ struct AskBar: View {
         .onHover { hovering in withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { isHovered = hovering } }
         .keyboardShortcut("k")
         .help("Ask questions across every conversation, like “What did Hakan say about the price?”")
+    }
+}
+
+/// A short streak of light circling a capsule's border. The gradient only rotates, so Core Animation
+/// runs it at the display's refresh rate without redrawing anything on the main thread.
+private struct EdgeLight: View {
+    @State private var spinning = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            let side = hypot(proxy.size.width, proxy.size.height)
+            AngularGradient(stops: [.init(color: .clear, location: 0), .init(color: .primary.opacity(0.7), location: 0.04),
+                                    .init(color: .clear, location: 0.1), .init(color: .clear, location: 1)],
+                            center: .center)
+                .frame(width: side, height: side)
+                .rotationEffect(.degrees(spinning ? 360 : 0))
+                .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+        }
+        .mask(Capsule().strokeBorder(lineWidth: 1.2))
+        .onAppear {
+            withAnimation(.linear(duration: 7).repeatForever(autoreverses: false)) { spinning = true }
+        }
     }
 }

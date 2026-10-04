@@ -92,6 +92,14 @@ struct DictationPill: View {
                             .monospacedDigit()
                     }
                     .transition(.opacity)
+                } else if controller.isLoadingModel {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.mini).tint(.white)
+                        Text("Loading speech model…")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    .transition(.opacity)
                 } else {
                     Thinking()
                         .transition(.opacity)

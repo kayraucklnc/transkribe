@@ -65,7 +65,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor lazy var dictation = DictationController(model: model)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        MainActor.assumeIsolated { dictation.installShortcut() }
+        MainActor.assumeIsolated {
+            dictation.installShortcut()
+            dictation.warmUp()
+        }
     }
 
     /// Files dropped on the Dock icon or opened with "Open With → Transkribe".
