@@ -119,6 +119,10 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var chat: AIChat?
     /// The quality setting the current text was produced with (nil = before qualities existed).
     public var quality: TranscriptionQuality?
+    /// Speakers linked to people the user knows.
+    public var speakerPeople: [Int: UUID] = [:]
+    /// Recordings that continue the same conversation share a thread.
+    public var threadID: UUID?
 
     public init(
         id: UUID = UUID(),
@@ -143,7 +147,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, createdAt, duration, language, tracks, segments, status, speakerNames, meSpeaker, summary, chat, quality
+        case id, title, createdAt, duration, language, tracks, segments, status, speakerNames, meSpeaker, summary, chat, quality, speakerPeople, threadID
     }
 
     public init(from decoder: Decoder) throws {
@@ -161,6 +165,8 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
         summary = try container.decodeIfPresent(AISummary.self, forKey: .summary)
         chat = try container.decodeIfPresent(AIChat.self, forKey: .chat)
         quality = try container.decodeIfPresent(TranscriptionQuality.self, forKey: .quality)
+        speakerPeople = try container.decodeIfPresent([Int: UUID].self, forKey: .speakerPeople) ?? [:]
+        threadID = try container.decodeIfPresent(UUID.self, forKey: .threadID)
     }
 
     /// The user's own speaker: their explicit choice, or the microphone track of a Mic + System recording.
@@ -177,6 +183,12 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     /// Labels are only worth showing when more than one voice was found.
     public var hasSpeakers: Bool {
         speakers.count > 1
+    }
+
+    /// A linked person's name wins over a typed label.
+    public func name(of speaker: Int, people: [Person]) -> String {
+        if let id = speakerPeople[speaker], let person = people.first(where: { $0.id == id }) { return person.name }
+        return name(of: speaker)
     }
 
     public func name(of speaker: Int) -> String {

@@ -77,6 +77,7 @@ private struct ParticipantChip: View {
     let speaker: Int
     @Environment(AppModel.self) private var model
     @State private var isRenaming = false
+    @State private var isLinking = false
     @State private var name = ""
 
     var body: some View {
@@ -85,6 +86,12 @@ private struct ParticipantChip: View {
         let isMe = transcript.resolvedMeSpeaker == speaker
         Menu {
             Button(isMe ? "This Isn't Me" : "This Is Me") { model.setMe(isMe ? nil : speaker, in: transcript.id) }
+            if let personID = transcript.speakerPeople[speaker] {
+                Button("Show \(displayName)") { model.selection = nil; model.selectedPerson = personID }
+                Button("Unlink Person") { model.unlink(speaker: speaker, in: transcript.id) }
+            } else {
+                Button("Who Is This?…") { isLinking = true }
+            }
             Button("Rename…") {
                 name = transcript.speakerNames[speaker] ?? ""
                 isRenaming = true
@@ -114,6 +121,9 @@ private struct ParticipantChip: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
+        .popover(isPresented: $isLinking, arrowEdge: .bottom) {
+            LinkPersonPopover(transcript: transcript, speaker: speaker) { isLinking = false }
+        }
         .popover(isPresented: $isRenaming, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Rename speaker").font(.headline)

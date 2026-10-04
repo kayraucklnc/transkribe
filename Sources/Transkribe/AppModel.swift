@@ -67,6 +67,12 @@ final class AppModel {
         }
     }
     var enhanceTask: Task<Void, Never>?
+    var people: [Person] = []
+    let peopleStore = PeopleStore()
+    /// The person whose page is open (when no conversation is).
+    var selectedPerson: Person.ID?
+    /// Set when a recording should join a conversation and/or be linked to a person.
+    var pendingFollowUp: (transcript: Transcript.ID?, person: Person.ID?)?
     var enhancingID: Transcript.ID?
     let diarizer: DiarizationEngine
     var session: (recorder: RecordingSession, transcript: Transcript)?
@@ -96,6 +102,7 @@ final class AppModel {
         } catch {
             show(error)
         }
+        loadPeople()
         let saved = UserDefaults.standard.string(forKey: Self.selectionKey).flatMap(UUID.init)
         selection = transcripts.first { $0.id == saved }?.id
         FileImport.removeTemporaryCopies()

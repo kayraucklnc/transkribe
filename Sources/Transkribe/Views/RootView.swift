@@ -13,6 +13,10 @@ struct RootView: View {
                     .id(transcript.id)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity),
                                             removal: .move(edge: .trailing).combined(with: .opacity)))
+            } else if let id = model.selectedPerson, let person = model.people.first(where: { $0.id == id }) {
+                PersonView(person: person)
+                    .id(person.id)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
                 LibraryView()
                     .transition(.opacity)
@@ -24,6 +28,7 @@ struct RootView: View {
             }
         }
         .animation(Theme.spring, value: model.selection)
+        .animation(Theme.spring, value: model.selectedPerson)
         .animation(Theme.spring, value: model.isRecording)
         .overlay {
             if !model.settings.completedOnboarding {

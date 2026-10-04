@@ -11,6 +11,9 @@ struct LibraryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 44) {
                 Welcome()
+                if !model.people.isEmpty, model.query.isEmpty {
+                    PeopleStrip()
+                }
                 if model.transcripts.isEmpty {
                     EmptyLibrary()
                 } else {

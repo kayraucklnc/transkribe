@@ -156,6 +156,7 @@ extension AppModel {
             }
         }
         store.clearCheckpoints(for: current)
+        if showsProgress, pendingFollowUp != nil, isLive || liveRecordingID == nil { applyPendingFollowUp(to: id) }
     }
 
     private func pipelineDidUpdate(id: Transcript.ID, track: AudioTrack, index: Int, update progressUpdate: TrackTranscriber.Progress,

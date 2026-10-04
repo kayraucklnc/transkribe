@@ -13,6 +13,7 @@ extension AppModel {
     func startRecording() {
         guard recordingState == .idle else { return }
         recordingState = .starting
+        selectedPerson = nil
         startFailure = nil
         selection = nil
         levels = Array(repeating: 0, count: Self.levelHistory)

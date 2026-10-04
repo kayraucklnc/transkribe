@@ -9,6 +9,7 @@ struct ConversationView: View {
     @Environment(PlayerController.self) private var player
     @AppStorage("showsInsights") private var showsInsights = true
     @State private var showsFind = false
+    @State private var isJoining = false
 
     private var isLive: Bool { model.liveRecordingID == transcript.id }
 
@@ -75,6 +76,9 @@ struct ConversationView: View {
         }
         .onExitCommand { withAnimation(Theme.spring) { model.selection = nil } }
         .onDisappear { player.stop() }
+        .sheet(isPresented: $isJoining) {
+            JoinConversationSheet(transcript: transcript) { isJoining = false }
+        }
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
@@ -91,6 +95,14 @@ struct ConversationView: View {
         }
         ToolbarItemGroup {
             Button {
+                model.recordFollowUp(of: transcript)
+            } label: {
+                Label("Record Follow-up", systemImage: "record.circle")
+            }
+            .help("Record the next part of this conversation")
+            .disabled(model.isRecording || isLive)
+
+            Button {
                 model.copyText(of: transcript.id)
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
@@ -103,6 +115,12 @@ struct ConversationView: View {
                     Button("Text") { export(.plainText) }
                     Button("Markdown") { export(.markdown) }
                     Button("Subtitles (SRT)") { export(.srt) }
+                }
+                Section("Conversation") {
+                    Button("Add to Another Conversation…") { isJoining = true }
+                    if transcript.threadID != nil {
+                        Button("Remove from This Conversation") { model.removeFromConversation(transcript.id) }
+                    }
                 }
                 Section {
                     Button("Transcribe Again") { model.transcribeAgain(transcript.id) }

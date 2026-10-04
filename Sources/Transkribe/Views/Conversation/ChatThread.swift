@@ -28,6 +28,7 @@ struct ChatThread: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
+                    ThreadContext(transcript: transcript)
                     ConversationHeader(transcript: transcript, isLive: isLive)
                         .padding(.bottom, 18)
                     if transcript.hasSpeakers, me == nil, transcript.status == .done {
