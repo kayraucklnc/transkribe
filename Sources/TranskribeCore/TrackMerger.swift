@@ -28,7 +28,7 @@ public enum TrackMerger {
                 let text = words.isEmpty ? clean(raw.text) : clean(words.map(\.text).joined())
                 guard !text.isEmpty else { return nil }
                 return Segment(
-                    id: stableID(track: trackIndex, start: raw.start, end: raw.end),
+                    id: stableID(track: trackIndex, start: raw.start),
                     start: raw.start + track.offset,
                     end: raw.end + track.offset,
                     text: text,
@@ -48,9 +48,11 @@ public enum TrackMerger {
     }
 
     /// Same input, same ID, so views keep their identity while partial results stream in.
-    static func stableID(track: Int, start: TimeInterval, end: TimeInterval) -> UUID {
+    /// Keyed on where a segment starts, not where it ends: while text streams in, a segment
+    /// keeps growing, and its bubble must stay the same view (no flicker, no scroll jump).
+    static func stableID(track: Int, start: TimeInterval) -> UUID {
         var hash: (UInt64, UInt64) = (0xcbf29ce484222325, 0x84222325cbf29ce4)
-        for value in [UInt64(track), UInt64(bitPattern: Int64(start * 1000)), UInt64(bitPattern: Int64(end * 1000))] {
+        for value in [UInt64(track), UInt64(bitPattern: Int64(start * 1000))] {
             for shift in stride(from: 0, to: 64, by: 8) {
                 let byte = (value >> UInt64(shift)) & 0xff
                 hash.0 = (hash.0 ^ byte) &* 0x100000001b3
@@ -91,7 +93,17 @@ public enum TrackMerger {
         RepetitionFilter.collapse(text)
             .replacingOccurrences(of: #"<\|[^|]*\|>"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^\s*[\[\(][^\]\)]*[\]\)]\s*$"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"^\s*[-–—]\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(^|\s)[-–—]+\s*(?=\S)"#, with: "$1", options: .regularExpression)
+            // Leading "..." Whisper uses for unclear audio.
+            .replacingOccurrences(of: #"^(\s*(\.{2,}|…))+\s*"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfNoWords ?? ""
+    }
+}
+
+private extension String {
+    /// Text with no letters or digits ("... ...", "—") isn't speech.
+    var nilIfNoWords: String? {
+        unicodeScalars.contains(where: CharacterSet.alphanumerics.contains) ? self : nil
     }
 }

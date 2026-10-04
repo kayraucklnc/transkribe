@@ -67,7 +67,8 @@ extension AppModel {
         let id = transcript.id
         update(id, persist: false) { $0.status = .transcribing }
         activity[id] = .transcribing(0)
-        defer { activity[id] = nil }
+        activityStarted[id] = Date()
+        defer { activity[id] = nil; activityStarted[id] = nil }
         do {
             try await engine.prepare(onProgress: { [weak self] in self?.reportPreparation($0) })
             // A recording cut off by a force quit or crash is rebuilt from its live copy.
@@ -105,8 +106,10 @@ extension AppModel {
             for (index, (track, source)) in sources.enumerated() {
                 let checkpoint = isLive ? nil : store.loadCheckpoint(for: transcript, track: track)
                 let diarization = track.source == .microphone ? nil : try? await diarizer.makeStream()
-                let transcriber = TrackTranscriber(source: source, engine: engine, diarization: diarization, planner: planner)
-                group.addTask {
+                let transcriber = TrackTranscriber(source: source, engine: engine, diarization: diarization, planner: planner,
+                                                   shouldPause: { ResourceGovernor.currentPauseReason() })
+                // Background priority: the user's apps always come first.
+                group.addTask(priority: .utility) {
                     let result = try await transcriber.run(
                         resume: checkpoint?.segments ?? [],
                         resumeUntil: checkpoint?.committedUntil ?? 0
@@ -123,13 +126,18 @@ extension AppModel {
         }
 
         guard let current = self.transcript(id) else { return }
-        let tracks = sources.enumerated().map { index, pair in
-            let (track, _) = pair
-            let result = results[index]!
-            return TrackMerger.Track(source: track.source, offset: current.tracks.first { $0.fileName == track.fileName }?.offset ?? track.offset,
-                                     segments: Self.label(result.segments, track: track, turns: result.turns))
+        let offsets = sources.map { pair in current.tracks.first { $0.fileName == pair.0.fileName }?.offset ?? pair.0.offset }
+        var labeled = sources.indices.map { Self.label(results[$0]!.segments, track: sources[$0].0, turns: results[$0]!.turns) }
+        if let mic = sources.firstIndex(where: { $0.0.source == .microphone }),
+           let system = sources.firstIndex(where: { $0.0.source == .system }) {
+            labeled[mic] = await removeSpeakerBleed(mic: labeled[mic], micSource: sources[mic].1, micOffset: offsets[mic],
+                                                   system: labeled[system], systemSource: sources[system].1, systemOffset: offsets[system])
         }
-        let segments = TrackMerger.merge(tracks)
+        let tracks = sources.indices.map { index in
+            TrackMerger.Track(source: sources[index].0.source, offset: offsets[index], segments: labeled[index])
+        }
+        // Overlapping turns are split where the other person cut in, so the thread reads in order.
+        let segments = Interleaver.interleave(TrackMerger.merge(tracks))
         let language = TranscriptionEngine.dominantLanguage(
             weights: results.values.map(\.languageWeights).reduce([:], TranscriptionEngine.merge)
         )
@@ -149,13 +157,20 @@ extension AppModel {
         guard let transcript = self.transcript(id) else { return }
         let labeled = Self.label(progressUpdate.committed + progressUpdate.pending, track: track, turns: progressUpdate.turns)
         progress.tracks[index] = TrackMerger.Track(source: track.source, offset: track.offset, segments: labeled)
+        // Count text still being decoded too: a whole file can be a single window, and progress
+        // must move while it's being worked on, not jump from 0 to 100.
+        let reached = max(progressUpdate.committedUntil, progressUpdate.pending.last?.end ?? 0)
         progress.fraction[index] = progressUpdate.availableDuration > 0
-            ? min(1, progressUpdate.committedUntil / progressUpdate.availableDuration) : 0
+            ? min(1, max(progress.fraction[index], reached / progressUpdate.availableDuration)) : 0
         update(id, persist: false) {
             $0.segments = TrackMerger.merge(progress.tracks.compactMap { $0 })
             $0.language = $0.language ?? progressUpdate.language
         }
-        activity[id] = isLive ? .live : .transcribing(progress.overall)
+        if let reason = progressUpdate.pausedReason {
+            activity[id] = .paused(reason)
+        } else {
+            activity[id] = isLive ? .live : .transcribing(progress.overall)
+        }
         if progressUpdate.pending.isEmpty {
             try? store.saveCheckpoint(
                 TrackCheckpoint(committedUntil: progressUpdate.committedUntil, segments: progressUpdate.committed,
@@ -163,6 +178,25 @@ extension AppModel {
                 for: transcript, track: track
             )
         }
+    }
+
+    /// Drops microphone lines that are only the call coming out of the speakers: their loudness
+    /// follows the system channel. Lines where you really spoke over the call are kept.
+    private func removeSpeakerBleed(mic: [RawSegment], micSource: AudioSource, micOffset: TimeInterval,
+                                    system: [RawSegment], systemSource: AudioSource, systemOffset: TimeInterval) async -> [RawSegment] {
+        var kept: [RawSegment] = []
+        for segment in mic {
+            let start = segment.start + micOffset, end = segment.end + micOffset
+            let overlapsCall = system.contains { $0.start + systemOffset < end && start < $0.end + systemOffset }
+            if overlapsCall,
+               let micAudio = try? await micSource.read(from: segment.start, to: segment.end),
+               let callAudio = try? await systemSource.read(from: start - systemOffset, to: end - systemOffset),
+               EchoDetector.isBleed(mic: micAudio, system: callAudio) {
+                continue
+            }
+            kept.append(segment)
+        }
+        return kept
     }
 
     /// The microphone in a Mic + System recording is always "Me"; other tracks use speaker detection.

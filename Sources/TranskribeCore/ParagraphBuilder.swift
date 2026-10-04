@@ -20,7 +20,7 @@ public enum ParagraphBuilder {
     public static func paragraphs(from segments: [Segment]) -> [Paragraph] {
         segments.reduce(into: [Paragraph]()) { result, segment in
             let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return }
+            guard text.unicodeScalars.contains(where: CharacterSet.alphanumerics.contains) else { return }
             let words = segment.words.isEmpty
                 ? [Word(start: segment.start, end: segment.end, text: " " + text)]
                 : RepetitionFilter.clean(words: segment.words).map { word in

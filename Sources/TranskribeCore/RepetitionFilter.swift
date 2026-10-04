@@ -35,7 +35,9 @@ public enum RepetitionFilter {
         var result: [Word] = []
         var runCount = 0
         for word in words {
+            // Whisper marks a change of speaker inside a line with a subtitle dash ("-Evet.").
             let core = word.text.trimmingCharacters(in: .whitespaces)
+                .replacingOccurrences(of: #"^[-–—]+"#, with: "", options: .regularExpression)
             if core.count >= 4, core.allSatisfy({ $0 == "." || $0 == "…" }) { continue }
             let collapsed = collapse(core)
             guard !collapsed.isEmpty else { continue }

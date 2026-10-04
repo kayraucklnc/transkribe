@@ -36,7 +36,7 @@ import Testing
 @Suite struct SupportedLanguageTests {
     @Test func votesAmongSupportedLanguages() {
         #expect(TranscriptionEngine.vote(["tr", "en", "tr"], fallback: nil) == "tr")
-        #expect(TranscriptionEngine.supportedLanguages == ["en", "tr"])
+        #expect(TranscriptionEngine.supportedLanguages == ["en", "tr", "it"])
     }
 
     @Test func unsupportedDetectionsFallBack() {

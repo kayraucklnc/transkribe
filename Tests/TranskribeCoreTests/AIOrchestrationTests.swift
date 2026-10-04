@@ -191,7 +191,7 @@ private func longTranscript(lines: Int = 120) -> Transcript {
         #expect(request.system.contains("Below are only the excerpts"))
         #expect(!request.system.contains(TranscriptPromptBuilder.render(transcript)))
         // Compact rules for small-context models.
-        #expect(request.system.contains("Rules: answer only from the transcript"))
+        #expect(request.system.contains("Rules: for facts, answer only from the transcript"))
     }
 
     @Test func followUpsRetrieveUsingThePreviousQuestion() throws {

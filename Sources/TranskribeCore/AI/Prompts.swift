@@ -38,6 +38,8 @@ public enum Prompts {
         switch transcript.language?.lowercased().prefix(2) {
         case "tr": SectionHeadings(tldr: "Özet", keyPoints: "Önemli noktalar", decisions: "Kararlar", actions: "Yapılacaklar",
                                    openQuestions: "Açık sorular", whoSaidWhat: "Kim ne dedi", unassigned: "Atanmadı")
+        case "it": SectionHeadings(tldr: "In breve", keyPoints: "Punti chiave", decisions: "Decisioni", actions: "Da fare",
+                                   openQuestions: "Domande aperte", whoSaidWhat: "Chi ha detto cosa", unassigned: "Non assegnato")
         case "de": SectionHeadings(tldr: "Kurzfassung", keyPoints: "Wichtige Punkte", decisions: "Entscheidungen", actions: "Aufgaben",
                                    openQuestions: "Offene Fragen", whoSaidWhat: "Wer hat was gesagt", unassigned: "Nicht zugewiesen")
         case "fr": SectionHeadings(tldr: "En bref", keyPoints: "Points clés", decisions: "Décisions", actions: "Actions",
@@ -51,6 +53,7 @@ public enum Prompts {
     /// Section headings for languages users are likely to use, so the model doesn't improvise.
     static let localizedHeadings: [String: String] = [
         "tr": "Özet, Önemli noktalar, Kararlar, Yapılacaklar, Açık sorular, Kim ne dedi; unassigned owner: Atanmadı",
+        "it": "In breve, Punti chiave, Decisioni, Da fare, Domande aperte, Chi ha detto cosa; unassigned owner: Non assegnato",
         "de": "Kurzfassung, Wichtige Punkte, Entscheidungen, Aufgaben, Offene Fragen, Wer hat was gesagt; unassigned owner: Nicht zugewiesen",
         "fr": "En bref, Points clés, Décisions, Actions, Questions ouvertes, Qui a dit quoi; unassigned owner: Non attribué",
         "es": "Resumen, Puntos clave, Decisiones, Tareas, Preguntas abiertas, Quién dijo qué; unassigned owner: Sin asignar",
@@ -294,8 +297,10 @@ public enum Prompts {
             : "Below is the full transcript."
         let rules = compact ? compactQuestionRules : fullQuestionRules
         return """
-        You answer questions about a recorded conversation for the user of Transkribe, a private \
-        transcription app. \(sourceNote)
+        You are a sharp, candid companion who helps the user of Transkribe, a private transcription \
+        app, make sense of a conversation they recorded: what was said, how it went, and what to do next. \
+        \(sourceNote)
+        \(userIdentity(for: transcript))
 
         \(rules)
 
@@ -311,12 +316,26 @@ public enum Prompts {
         """
     }
 
+    /// Tells the model who "I" is, so "how did I do?" is about the right person.
+    static func userIdentity(for transcript: Transcript) -> String {
+        guard let me = transcript.resolvedMeSpeaker, transcript.speakers.contains(me) else {
+            return "If the user says \"I\" or \"me\" and it's unclear which speaker they are, ask briefly or answer for the likeliest one and say so."
+        }
+        return "The user is \"\(transcript.name(of: me))\" in the transcript: \"I\", \"me\" and \"my\" in their questions refer to that speaker."
+    }
+
     private static let fullQuestionRules = """
     <rules>
-    - Answer only from the transcript. Don't fill gaps about what was said with assumptions or outside \
-    knowledge; general knowledge is fine only to explain a term the user asks about.
-    - If the transcript doesn't contain the answer, say so plainly in the first sentence (e.g. "The \
-    transcript doesn't mention a budget."), then mention the closest thing it does say, if anything. Never guess.
+    Two kinds of questions come in, and they need different answers:
+    - Factual ("what was the price?", "when is the demo?"): answer only from the transcript and never \
+    guess. If it isn't there, say so plainly in the first sentence, then mention the closest thing it does say.
+    - Judgment and advice ("how did I do?", "did he like it?", "what else could I have said?", "how \
+    should I follow up?"): give your honest read, like an experienced colleague who listened in. Ground it \
+    in what happened (their reactions, objections, questions, enthusiasm or hesitation, who talked how \
+    much) and say what you're basing it on. Be direct and constructive: name what worked, what didn't, and \
+    one or two concrete things to do or say differently. You may use general know-how about sales, \
+    negotiation, interviews and communication. Mark interpretation as such ("it sounds like…"), and \
+    never invent things that weren't said.
     - Don't add timestamps unless the user asks when something was said or the exact moment clearly \
     matters; then give one or two, copied exactly, e.g. [12:34]. Quote short phrases in their original \
     language only when the exact wording matters.
@@ -329,8 +348,9 @@ public enum Prompts {
     """
 
     private static let compactQuestionRules = """
-    Rules: answer only from the transcript and never guess. If it doesn't contain the answer, say so \
-    plainly. No timestamps unless asked when something was said. Answer in the language of the \
+    Rules: for facts, answer only from the transcript and never guess; if it isn't there, say so. For \
+    "how did I do / did they like it / what should I say" questions, give an honest, constructive read \
+    based on what happened, and say it's your interpretation. No timestamps unless asked when something was said. Answer in the language of the \
     question, in one to three sentences. Speaker labels and recognized words may contain errors.
     """
 }

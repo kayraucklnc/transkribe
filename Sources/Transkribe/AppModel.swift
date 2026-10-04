@@ -17,6 +17,8 @@ final class AppModel {
         case transcribing(Double)
         /// Transcribing a recording that is still running.
         case live
+        /// Waiting for the Mac to have resources to spare; resumes on its own.
+        case paused(String)
         case identifyingSpeakers
     }
 
@@ -38,6 +40,8 @@ final class AppModel {
 
     var modelPreparation: TranscriptionEngine.Preparation?
     var activity: [Transcript.ID: Activity] = [:]
+    /// When the current work on a transcript began, for time-left estimates.
+    var activityStarted: [Transcript.ID: Date] = [:]
 
     var recordingState: RecordingState = .idle
     /// Recent input levels (0...1), newest last, for the live waveform.

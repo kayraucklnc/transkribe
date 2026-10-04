@@ -7,11 +7,20 @@ struct ChatThread: View {
     let isLive: Bool
     @Environment(AppModel.self) private var model
     @State private var flashID: Paragraph.ID?
+    /// Keeps the bubble you're reading in place while new text arrives.
+    @State private var scrollAnchor: String?
+
+    /// Speakers whose side is certain. While a transcript is still being worked on, detected
+    /// speakers can still change, so their lines wait in the middle; only the microphone
+    /// ("Me" in a Mic + System recording) is known from the start.
+    private var settledSpeakers: Set<Int>? {
+        guard transcript.status != .done else { return nil }
+        return transcript.tracks.contains { $0.source == .microphone } ? [SpeakerID.me] : []
+    }
 
     var body: some View {
-        let paragraphs = ParagraphBuilder.paragraphs(from: transcript.segments)
         let me = transcript.resolvedMeSpeaker
-        let items = ChatLayout.items(for: paragraphs, me: me)
+        let items = ChatLayout.items(for: transcript.segments, me: me)
         let starts = items.compactMap { item -> (start: TimeInterval, id: Paragraph.ID)? in
             if case .bubble(let bubble) = item { (bubble.paragraph.start, bubble.id) } else { nil }
         }
@@ -27,7 +36,8 @@ struct ChatThread: View {
                     }
                     ThreadStatus(transcript: transcript, isLive: isLive)
                     BubbleList(transcriptID: transcript.id, items: items, starts: starts, names: names,
-                               labelsSpeakers: transcript.hasSpeakers, query: model.query, flashID: flashID, scroll: proxy)
+                               labelsSpeakers: transcript.hasSpeakers, query: model.query, flashID: flashID,
+                               settled: settledSpeakers, scroll: proxy)
                     if isLive {
                         TypingIndicator()
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -41,6 +51,7 @@ struct ChatThread: View {
                 .frame(maxWidth: 860)
                 .frame(maxWidth: .infinity)
             }
+            .scrollPosition(id: $scrollAnchor, anchor: .top)
             .onChange(of: transcript.segments.count) { _, _ in
                 guard isLive else { return }
                 withAnimation(.easeOut(duration: 0.35)) { proxy.scrollTo("live-end", anchor: .bottom) }
@@ -69,6 +80,8 @@ private struct BubbleList: View {
     let labelsSpeakers: Bool
     let query: String
     let flashID: Paragraph.ID?
+    /// nil = every speaker is settled.
+    let settled: Set<Int>?
     let scroll: ScrollViewProxy
     @Environment(PlayerController.self) private var player
 
@@ -91,13 +104,24 @@ private struct BubbleList: View {
                         query: query,
                         transcriptID: transcriptID,
                         speakers: names,
-                        isFlashing: bubble.id == flashID
+                        isFlashing: bubble.id == flashID,
+                        isProvisional: settled.map { set in bubble.paragraph.speaker.map { !set.contains($0) } ?? true } ?? false
                     )
                     .equatable()
                     .id(bubble.id)
+                    // New messages arrive like a sent message: a small spring from their side.
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.85, anchor: bubble.isMine ? .bottomTrailing : .bottomLeading)
+                            .combined(with: .opacity)
+                            .combined(with: .offset(y: 10)),
+                        removal: .opacity
+                    ))
                 }
             }
         }
+        .scrollTargetLayout()
+        .animation(.spring(response: 0.42, dampingFraction: 0.78), value: items.count)
+        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: settled == nil)
         .onChange(of: current) { _, id in
             guard player.isPlaying, let id else { return }
             withAnimation(.easeInOut(duration: 0.45)) { scroll.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.4)) }
@@ -165,11 +189,17 @@ private struct ThreadStatus: View {
                     .padding(.vertical, 40)
                 }
             case (.pending, _):
-                banner("Waiting to transcribe…", progress: nil)
+                WorkingCard(title: "Waiting to transcribe", subtitle: "Starts as soon as the one before it finishes", progress: nil)
+                    .padding(.bottom, 20)
             case (_, .transcribing(let progress)?):
-                banner("Transcribing", progress: progress)
+                WorkingCard(title: "Transcribing", subtitle: timeLeft(progress), progress: progress)
+                    .padding(.bottom, 20)
+            case (_, .paused(let reason)?):
+                WorkingCard(title: "Paused for now", subtitle: "\(reason). Picks up right where it left off.", progress: nil)
+                    .padding(.bottom, 20)
             case (_, .identifyingSpeakers?):
-                banner("Identifying speakers", progress: nil)
+                WorkingCard(title: "Identifying speakers", subtitle: "Working out who said what", progress: nil)
+                    .padding(.bottom, 20)
             case (.failed(let message), _):
                 HStack(spacing: 12) {
                     Label(message, systemImage: "exclamationmark.triangle.fill")
@@ -190,24 +220,12 @@ private struct ThreadStatus: View {
         .animation(Theme.spring, value: model.activity[transcript.id])
     }
 
-    private func banner(_ text: String, progress: Double?) -> some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text(text).font(.callout.weight(.medium))
-                Spacer()
-                if let progress {
-                    Text(progress.formatted(.percent.precision(.fractionLength(0))))
-                        .font(.callout.monospacedDigit())
-                        .contentTransition(.numericText())
-                }
-            }
-            .foregroundStyle(.secondary)
-            if let progress {
-                ProgressView(value: progress)
-            } else {
-                ProgressView().progressViewStyle(.linear)
-            }
-        }
-        .padding(.bottom, 18)
+    /// "About 2 min left", from how fast it has gone so far.
+    private func timeLeft(_ progress: Double) -> String {
+        guard progress > 0.03, let started = model.activityStarted[transcript.id] else { return "Getting started…" }
+        let elapsed = Date().timeIntervalSince(started)
+        let remaining = elapsed * (1 - progress) / progress
+        if remaining < 45 { return "Less than a minute left" }
+        return "About \(Int((remaining / 60).rounded(.up))) min left"
     }
 }

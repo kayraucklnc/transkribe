@@ -16,7 +16,7 @@ public actor TranscriptionEngine {
     /// Languages the user speaks. Detection only chooses among these, so a quiet or noisy
     /// stretch is never mistaken for a third language, and decoding with a fixed language
     /// makes Whisper's repetition loops rarer. Empty = any language.
-    public static let supportedLanguages: Set<String> = ["en", "tr"]
+    public static let supportedLanguages: Set<String> = ["en", "tr", "it"]
 
     public struct Output: Sendable {
         public var segments: [RawSegment]

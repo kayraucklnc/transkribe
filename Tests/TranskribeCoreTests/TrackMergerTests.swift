@@ -76,6 +76,17 @@ import Testing
         #expect(Set(first).count == 2)
     }
 
+    @Test func stripsDialogueDashesInsideLinesAndWords() {
+        let merged = TrackMerger.merge([.init(source: nil, offset: 0, segments: [
+            RawSegment(start: 0, end: 2, text: "- Anladım kadarıyla. - Evet.", words: [
+                Word(start: 0, end: 0.5, text: " -"), Word(start: 0.5, end: 1, text: " Anladım"), Word(start: 1, end: 1.4, text: " kadarıyla."),
+                Word(start: 1.5, end: 1.6, text: " -Evet."),
+            ]),
+            RawSegment(start: 3, end: 4, text: "e-posta adresim"),
+        ])])
+        #expect(merged.map(\.text) == ["Anladım kadarıyla. Evet.", "e-posta adresim"])
+    }
+
     @Test func stripsDialogueDashes() {
         let merged = TrackMerger.merge([
             .init(source: nil, offset: 0, segments: [
@@ -84,7 +95,7 @@ import Testing
                 RawSegment(start: 2, end: 3, text: "e-posta - adresim"),
             ]),
         ])
-        #expect(merged.map(\.text) == ["Aynı şeyler geliyor değil mi?", "Okey", "e-posta - adresim"])
+        #expect(merged.map(\.text) == ["Aynı şeyler geliyor değil mi?", "Okey", "e-posta adresim"])
     }
 
     @Test func similarityIsCaseAndPunctuationInsensitive() {

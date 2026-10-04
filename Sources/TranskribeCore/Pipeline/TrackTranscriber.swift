@@ -15,6 +15,8 @@ public final class TrackTranscriber: @unchecked Sendable {
         /// Speaker turns found so far (empty when the track isn't diarized).
         public var turns: [SpeakerTurn]
         public var language: String?
+        /// Set while transcription waits for the Mac to have resources to spare.
+        public var pausedReason: String? = nil
     }
 
     public struct Result: Sendable {
@@ -31,6 +33,8 @@ public final class TrackTranscriber: @unchecked Sendable {
     private let pollInterval: Duration
     /// Diarization is fed in pieces of this length so memory stays bounded.
     private let diarizationPiece: TimeInterval
+    /// Returns a reason to hold off before the next window, or nil to continue.
+    private let shouldPause: @Sendable () -> String?
 
     public init(
         source: AudioSource,
@@ -38,7 +42,8 @@ public final class TrackTranscriber: @unchecked Sendable {
         diarization: DiarizationStream?,
         planner: WindowPlanner,
         pollInterval: Duration = .seconds(1),
-        diarizationPiece: TimeInterval = 120
+        diarizationPiece: TimeInterval = 120,
+        shouldPause: @escaping @Sendable () -> String? = { nil }
     ) {
         self.source = source
         self.engine = engine
@@ -46,6 +51,7 @@ public final class TrackTranscriber: @unchecked Sendable {
         self.planner = planner
         self.pollInterval = pollInterval
         self.diarizationPiece = diarizationPiece
+        self.shouldPause = shouldPause
     }
 
     /// Runs until the source is complete and fully transcribed. `resume` continues an
@@ -71,6 +77,15 @@ public final class TrackTranscriber: @unchecked Sendable {
                     try diarization.append(try await source.read(from: diarizedUntil, to: end))
                     diarizedUntil = end
                 }
+            }
+
+            if let reason = shouldPause() {
+                // Resources are tight: wait (recording continues), then pick up exactly here.
+                await onProgress(Progress(committed: committed, pending: [], committedUntil: committedUntil,
+                                          availableDuration: available, turns: diarization?.turns() ?? [],
+                                          language: nil, pausedReason: reason))
+                try await Task.sleep(for: .seconds(10))
+                continue
             }
 
             guard let window = planner.window(committed: committedUntil, available: available, sourceComplete: complete) else {

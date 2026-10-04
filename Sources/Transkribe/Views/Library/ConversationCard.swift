@@ -30,6 +30,7 @@ private struct CardInfo {
         switch transcript.language {
         case "tr": "🇹🇷"
         case "en": "🇬🇧"
+        case "it": "🇮🇹"
         default: nil
         }
     }
@@ -264,6 +265,10 @@ private struct StatusBadge: View {
             ProgressRing(progress: progress)
         case .identifyingSpeakers?:
             ProgressView().controlSize(.small)
+        case .paused(let reason)?:
+            Image(systemName: "pause.circle.fill")
+                .foregroundStyle(.secondary)
+                .help("Paused: \(reason). Resumes automatically.")
         case nil:
             if case .failed = transcript.status {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)

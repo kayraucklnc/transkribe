@@ -105,6 +105,15 @@ import Testing
         #expect(RepetitionFilter.clean(words: input) == input)
     }
 
+    @Test func dropsSegmentsWithoutAnyWords() {
+        let merged = TrackMerger.merge([.init(source: nil, offset: 0, segments: [
+            RawSegment(start: 0, end: 1, text: "... ... ... ... ..."),
+            RawSegment(start: 1, end: 2, text: "..."),
+            RawSegment(start: 2, end: 3, text: "... Yazı stilinden kastığınız ne?"),
+        ])])
+        #expect(merged.map(\.text) == ["Yazı stilinden kastığınız ne?"])
+    }
+
     @Test func paragraphsUseCleanedWords() {
         let segment = Segment(start: 0, end: 20, text: "ayırmış ee", words: words("ayırmış " + String(repeating: "ee ", count: 30)))
         let paragraph = ParagraphBuilder.paragraphs(from: [segment]).first

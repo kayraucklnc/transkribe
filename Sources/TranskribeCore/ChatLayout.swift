@@ -13,6 +13,8 @@ public enum ChatLayout {
         public var isLastInGroup: Bool
         /// Show the speaker's name above the bubble (first bubble of a group in a group chat).
         public var showsName: Bool
+        /// Quick reactions others had while this was being said, shown as tapbacks.
+        public var reactions: [Reaction] = []
 
         public var id: Paragraph.ID { paragraph.id }
     }
@@ -27,6 +29,58 @@ public enum ChatLayout {
             case .bubble(let bubble): bubble.id.uuidString
             }
         }
+    }
+
+    /// Builds the thread from segments, turning quick reactions into tapbacks on the message
+    /// they respond to (only when there are several speakers to react to each other).
+    public static func items(for segments: [Segment], me: Int?) -> [Item] {
+        let speakers = Set(segments.compactMap(\.speaker))
+        guard speakers.count > 1 else { return items(for: ParagraphBuilder.paragraphs(from: segments), me: me) }
+
+        var reactions: [(segment: Segment, kind: Reaction.Kind)] = []
+        var messages: [Segment] = []
+        for segment in segments {
+            if let kind = Reaction.Kind.classify(segment.text), isResponding(segment, among: segments) {
+                reactions.append((segment, kind))
+            } else {
+                messages.append(segment)
+            }
+        }
+        var result = items(for: ParagraphBuilder.paragraphs(from: messages), me: me)
+        for (segment, kind) in reactions {
+            let reaction = Reaction(id: segment.id, speaker: segment.speaker, kind: kind,
+                                    text: segment.text.trimmingCharacters(in: .whitespaces), time: segment.start)
+            if let index = target(for: segment, in: result) {
+                guard case .bubble(var bubble) = result[index] else { continue }
+                bubble.reactions.append(reaction)
+                result[index] = .bubble(bubble)
+            }
+        }
+        return result
+    }
+
+    /// A reaction responds to someone else: said while they talk, or right after they finish.
+    private static func isResponding(_ reaction: Segment, among segments: [Segment]) -> Bool {
+        segments.contains { other in
+            other.speaker != reaction.speaker && other.id != reaction.id
+                && reaction.start >= other.start - 0.3 && reaction.start <= other.end + reactionWindow
+                && Reaction.Kind.classify(other.text) == nil
+        }
+    }
+
+    /// Reactions said within this long after a message still count as responding to it.
+    static let reactionWindow: TimeInterval = 1.5
+
+    private static func target(for reaction: Segment, in items: [Item]) -> Int? {
+        var best: (index: Int, distance: TimeInterval)?
+        for (index, item) in items.enumerated() {
+            guard case .bubble(let bubble) = item, bubble.paragraph.speaker != reaction.speaker else { continue }
+            let paragraph = bubble.paragraph
+            let distance: TimeInterval = reaction.start < paragraph.start ? paragraph.start - reaction.start
+                : reaction.start > paragraph.end ? reaction.start - paragraph.end : 0
+            if distance <= reactionWindow, distance < (best?.distance ?? .infinity) { best = (index, distance) }
+        }
+        return best?.index
     }
 
     public static func items(for paragraphs: [Paragraph], me: Int?) -> [Item] {

@@ -486,7 +486,7 @@ private struct Suggestions: View {
             Text("Ask anything about this conversation")
                 .font(.system(.title3, design: .rounded).weight(.semibold))
                 .padding(.top, 16)
-            Text("Answers come only from what was said.")
+            Text("Facts come from what was said. Ask for feedback and advice too.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 6)
@@ -509,13 +509,21 @@ private struct Suggestions: View {
     }
 
     private var suggestions: [String] {
-        let turkish = transcript.language == "tr"
-        var list = turkish
-            ? ["Hangi kararlar alındı?", "Kim neyi yapacak?", "Açık kalan sorular neler?"]
-            : ["What was decided?", "Who is doing what next?", "What's still open?"]
+        var list: [String]
+        let wants: (String) -> String
+        switch transcript.language {
+        case "tr":
+            list = ["Nasıl geçti, ben nasıldım?", "Karşı taraf ikna oldu mu?", "Başka ne söyleyebilirdim?", "Kim neyi yapacak?"]
+            wants = { "\($0) gerçekten ne istiyor?" }
+        case "it":
+            list = ["Com'è andata, come sono stato?", "Erano convinti?", "Cos'altro avrei potuto dire?", "Chi fa cosa adesso?"]
+            wants = { "Cosa vuole davvero \($0)?" }
+        default:
+            list = ["How did I do?", "Were they convinced?", "What else could I have said?", "Who is doing what next?"]
+            wants = { "What does \($0) really want?" }
+        }
         if transcript.hasSpeakers, let other = transcript.speakers.first(where: { $0 != transcript.resolvedMeSpeaker }) {
-            let name = transcript.name(of: other)
-            list.append(turkish ? "\(name) ne istiyor?" : "What does \(name) want?")
+            list.append(wants(transcript.name(of: other)))
         }
         return list
     }

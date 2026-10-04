@@ -34,6 +34,16 @@ struct TranscriptionIntegrationTests {
         #expect(text.contains("istanbul"))
     }
 
+    @Test func transcribesItalian() async throws {
+        let url = try speak("Buongiorno a tutti. Domani presentiamo il nuovo progetto al cliente di Milano.", voice: "Alice")
+        let output = try await transcribe(url)
+        let text = TranscriptSearch.normalize(output.segments.map(\.text).joined(separator: " "))
+
+        #expect(output.language == "it")
+        #expect(text.contains("buongiorno"))
+        #expect(text.contains("milano"))
+    }
+
     @Test func transcribesEnglish() async throws {
         let url = try speak("The quarterly report is due next Friday. Please send your numbers.", voice: "Samantha")
         let output = try await transcribe(url)
