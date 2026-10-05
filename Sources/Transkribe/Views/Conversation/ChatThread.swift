@@ -71,6 +71,9 @@ struct ChatThread: View {
 
 /// The thread's messages. It doesn't read the playhead itself (that would re-lay out every
 /// message 20 times a second); `PlayheadWatcher` only reports when the current bubble changes.
+/// A plain (not lazy) stack: bubbles vary a lot in height, and a LazyVStack kept re-estimating
+/// them, shifting the scroll position and realizing different rows every frame, which froze the
+/// app once a recording was saved. Bubbles are equatable, so laying them all out once is cheap.
 private struct BubbleList: View {
     let transcriptID: Transcript.ID
     let items: [ChatLayout.Item]
@@ -87,7 +90,7 @@ private struct BubbleList: View {
     @Environment(PlayerController.self) private var player
 
     var body: some View {
-        LazyVStack(spacing: 0) {
+        VStack(spacing: 0) {
             ForEach(items) { item in
                 switch item {
                 case .separator(let time):
