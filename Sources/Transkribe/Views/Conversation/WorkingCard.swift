@@ -89,14 +89,15 @@ private struct ProgressTrack: View {
                         LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
                             .frame(width: 80)
                             .offset(x: sweep ? filled : -80)
+                            // Scoped here: a repeating `withAnimation` would also loop any layout
+                            // change made in the same update (e.g. the thread around this card).
+                            .animation(.linear(duration: 1.6).repeatForever(autoreverses: false), value: sweep)
                             .frame(width: filled, alignment: .leading)
                             .clipShape(Capsule())
                     }
                     .animation(.spring(response: 0.6, dampingFraction: 0.9), value: filled)
             }
         }
-        .onAppear {
-            withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) { sweep = true }
-        }
+        .onAppear { sweep = true }
     }
 }

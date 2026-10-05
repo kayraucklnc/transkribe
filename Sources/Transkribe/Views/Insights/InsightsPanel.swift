@@ -292,15 +292,14 @@ private struct SummarizeHero: View {
                     .frame(width: 90, height: 90)
                     .blur(radius: 24)
                     .scaleEffect(glow ? 1.1 : 0.9)
+                    .animation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true), value: glow)
                 Image(systemName: "sparkles")
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(.tint)
                     .symbolRenderingMode(.hierarchical)
             }
             .padding(.top, 36)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) { glow = true }
-            }
+            .onAppear { glow = true }
             Text("Summarize this conversation")
                 .font(.system(.title3, design: .rounded).weight(.semibold))
             Text("The gist, decisions, who does what next, and what's still open.")

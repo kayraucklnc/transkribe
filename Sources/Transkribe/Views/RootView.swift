@@ -86,6 +86,7 @@ private struct DropOverlay: View {
                     .font(.system(size: 56, weight: .light))
                     .symbolRenderingMode(.hierarchical)
                     .scaleEffect(pulse ? 1.07 : 1)
+                    .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
                 Text("Drop to transcribe")
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                 Text("Any audio or video. Any language. Any length.")
@@ -97,8 +98,6 @@ private struct DropOverlay: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .transition(.opacity)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        .onAppear { pulse = true }
     }
 }
