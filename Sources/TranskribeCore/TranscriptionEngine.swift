@@ -60,8 +60,7 @@ public actor TranscriptionEngine {
     }
 
     public static var defaultModelsDirectory: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("Transkribe/Models", isDirectory: true)
+        TranscriptStore.supportDirectory.appendingPathComponent("Models", isDirectory: true)
     }
 
     /// Downloads (first run only) and loads the model. Safe to call repeatedly and concurrently.

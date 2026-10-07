@@ -24,31 +24,11 @@ struct InsightsPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                HStack(spacing: 2) {
-                    ForEach(Tab.allCases, id: \.self) { item in
-                        Button {
-                            withAnimation(Theme.spring) { tab = item }
-                        } label: {
-                            Label(item.rawValue, systemImage: item.symbol)
-                                .font(.callout.weight(tab == item ? .semibold : .medium))
-                                .foregroundStyle(tab == item ? Color.primary : Color.secondary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 7)
-                                .background {
-                                    if tab == item {
-                                        Capsule()
-                                            .fill(Theme.card)
-                                            .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
-                                            .matchedGeometryEffect(id: "tab", in: tabSelection)
-                                    }
-                                }
-                                .contentShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
+                // Narrow panels show only the open tab's name; the others keep their icon.
+                ViewThatFits(in: .horizontal) {
+                    tabs(compact: false)
+                    tabs(compact: true)
                 }
-                .padding(3)
-                .background(Color.primary.opacity(0.06), in: Capsule())
                 Spacer()
                 ModelPicker()
             }
@@ -71,6 +51,43 @@ struct InsightsPanel: View {
             }
         }
         .overlay(alignment: .leading) { Divider() }
+    }
+
+    private func tabs(compact: Bool) -> some View {
+        HStack(spacing: 2) {
+            ForEach(Tab.allCases, id: \.self) { item in
+                Button {
+                    withAnimation(Theme.spring) { tab = item }
+                } label: {
+                    Group {
+                        if compact && tab != item {
+                            Image(systemName: item.symbol)
+                        } else {
+                            Label(item.rawValue, systemImage: item.symbol)
+                        }
+                    }
+                    .font(.callout.weight(tab == item ? .semibold : .medium))
+                    .foregroundStyle(tab == item ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, compact ? 10 : 14)
+                    .padding(.vertical, 7)
+                    .background {
+                        if tab == item {
+                            Capsule()
+                                .fill(Theme.card)
+                                .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
+                                .matchedGeometryEffect(id: "tab", in: tabSelection)
+                        }
+                    }
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(item.rawValue)
+            }
+        }
+        .padding(3)
+        .background(Color.primary.opacity(0.06), in: Capsule())
     }
 }
 
