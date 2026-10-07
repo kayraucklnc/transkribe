@@ -9,9 +9,17 @@ public struct TranscriptStore: Sendable {
         self.rootDirectory = rootDirectory
     }
 
-    public static var defaultRoot: URL {
+    /// Where the app keeps its data. Set `TRANSKRIBE_HOME` to use another folder (demos, testing).
+    public static var supportDirectory: URL {
+        if let custom = ProcessInfo.processInfo.environment["TRANSKRIBE_HOME"], !custom.isEmpty {
+            return URL(fileURLWithPath: (custom as NSString).expandingTildeInPath, isDirectory: true)
+        }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("Transkribe/Library", isDirectory: true)
+        return support.appendingPathComponent("Transkribe", isDirectory: true)
+    }
+
+    public static var defaultRoot: URL {
+        supportDirectory.appendingPathComponent("Library", isDirectory: true)
     }
 
     public func directory(for transcript: Transcript) -> URL {
