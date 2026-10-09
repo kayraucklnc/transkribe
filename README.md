@@ -51,7 +51,9 @@ Audio never leaves your Mac. Transcription uses [WhisperKit](https://github.com/
 
 Transkribe needs macOS 14 or later on Apple Silicon. Liquid Glass is used on macOS 26.
 
-Build it from source with Xcode 16 or later (the command line tools are enough):
+Download `Transkribe-<version>.dmg` from the [latest release](https://github.com/kayraucklnc/transkribe/releases/latest), open it and drag Transkribe to Applications. If macOS says the app can't be verified, go to *System Settings → Privacy & Security* and click **Open Anyway** once.
+
+Or build it from source with Xcode 26 or later (the command line tools are enough):
 
 ```bash
 git clone https://github.com/kayraucklnc/transkribe.git
@@ -103,6 +105,16 @@ The screenshots above use a fictional library voiced by macOS `say`. To recreate
 TRANSKRIBE_DEMO_HOME=/tmp/transkribe-demo swift test --filter DemoLibraryTests
 scripts/build-app.sh && open --env TRANSKRIBE_HOME=/tmp/transkribe-demo build/Transkribe.app
 ```
+
+### Releasing
+
+Push a version tag and the [Release workflow](.github/workflows/release.yml) builds the DMG and attaches it to a GitHub release:
+
+```bash
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+Without signing secrets the DMG is ad-hoc signed. Add the Developer ID and notarization secrets listed at the top of the workflow to ship one that opens without warnings.
 
 ### Layout
 
