@@ -38,6 +38,7 @@ public struct WindowPlanner: Sendable {
     }
 
     public static let live = WindowPlanner(minimumWindow: 30, maximumWindow: 120, tailGuard: 5)
+    public static let fastLive = WindowPlanner(minimumWindow: 10, maximumWindow: 60, tailGuard: 3)
     public static let file = WindowPlanner(minimumWindow: 30, maximumWindow: 600, tailGuard: 5)
 
     public func window(committed: TimeInterval, available: TimeInterval, sourceComplete: Bool) -> Window? {
