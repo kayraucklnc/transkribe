@@ -18,6 +18,8 @@ Speech recognition and speaker detection run entirely on your Mac.
 
 **Live, and easy on your Mac.** Recordings are transcribed while you talk, in batches that never cut a sentence. Hours-long files use constant memory and resume after a quit. Work runs at background priority and pauses when the Mac is hot, on low battery or busy.
 
+Before recording, enable **Faster live text (uses more CPU)** in Settings → Transcription for shorter live transcription windows. This option is off by default.
+
 **Reads like a chat.** Your words appear on the right like sent messages, everyone else on the left. The spoken word lights up during playback, double-clicking a bubble plays it, and quick reactions ("Yeah", "Haha", "Aynen") become tapbacks on the message they respond to.
 
 ![A conversation with its summary](docs/screenshots/summary.png)

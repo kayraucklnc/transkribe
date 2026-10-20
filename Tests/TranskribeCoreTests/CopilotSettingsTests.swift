@@ -35,4 +35,24 @@ import Testing
         let data = try #require(defaults.data(forKey: "copilotSettings"))
         #expect(try JSONDecoder().decode(CopilotSettings.self, from: data).fastLiveWindow)
     }
+
+    @Test func livePlannerChangesOnlyWhenEnabled() {
+        let standard = CopilotSettings.default.windowPlanner(isLive: true)
+        #expect(standard.minimumWindow == 30)
+        #expect(standard.maximumWindow == 120)
+        #expect(standard.tailGuard == 5)
+
+        let fast = CopilotSettings(fastLiveWindow: true).windowPlanner(isLive: true)
+        #expect(fast.minimumWindow == 10)
+        #expect(fast.maximumWindow == 60)
+        #expect(fast.tailGuard == 3)
+    }
+
+    @Test(arguments: [false, true])
+    func filePlannerDoesNotChange(_ fastLiveWindow: Bool) {
+        let planner = CopilotSettings(fastLiveWindow: fastLiveWindow).windowPlanner(isLive: false)
+        #expect(planner.minimumWindow == 30)
+        #expect(planner.maximumWindow == 600)
+        #expect(planner.tailGuard == 5)
+    }
 }

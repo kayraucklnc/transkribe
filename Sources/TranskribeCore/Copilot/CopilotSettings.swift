@@ -28,4 +28,9 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
     public func save(to defaults: UserDefaults = .standard) {
         if let data = try? JSONEncoder().encode(self) { defaults.set(data, forKey: Self.key) }
     }
+
+    public func windowPlanner(isLive: Bool) -> WindowPlanner {
+        guard isLive else { return .file }
+        return fastLiveWindow ? .fastLive : .live
+    }
 }

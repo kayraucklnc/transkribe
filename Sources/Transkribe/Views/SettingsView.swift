@@ -32,6 +32,10 @@ private struct TranscriptionSettingsTab: View {
                 Section(title: "How Transkribe listens") {
                     QualityPicker(quality: $model.settings.quality, languages: model.settings.languages)
                 }
+                Section(title: "Live transcription") {
+                    Toggle("Faster live text (uses more CPU)", isOn: $model.copilotSettings.fastLiveWindow)
+                        .toggleStyle(.switch)
+                }
                 Section(title: "Background improvement") {
                     Toggle(isOn: $model.settings.enhanceWhenIdle) {
                         VStack(alignment: .leading, spacing: 3) {
