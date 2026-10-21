@@ -10,6 +10,45 @@ import Testing
         #expect(!settings.fastLiveWindow)
     }
 
+    @Test func liveAskFlagDefaultsAndPersistsIndependently() throws {
+        let old = try JSONDecoder().decode(CopilotSettings.self,
+            from: Data(#"{"fastLiveWindow":true}"#.utf8))
+        #expect(!old.askWhileLive)
+        let defaults = Fixtures.temporaryDefaults()
+        let enabled = CopilotSettings(askWhileLive: true)
+        enabled.save(to: defaults)
+        #expect(CopilotSettings.load(from: defaults) == enabled)
+        #expect(!enabled.fastLiveWindow)
+        let null = try JSONDecoder().decode(CopilotSettings.self,
+            from: Data(#"{"askWhileLive":null}"#.utf8))
+        #expect(null == .default)
+    }
+
+    @Test func canAskRespectsStatusAndLiveOptIn() {
+        let cases: [(TranscriptStatus, Bool, Bool, Bool)] = [
+            (.pending, false, false, false),
+            (.pending, false, true, false),
+            (.pending, true, false, false),
+            (.pending, true, true, false),
+            (.transcribing, false, false, false),
+            (.transcribing, false, true, false),
+            (.transcribing, true, false, false),
+            (.transcribing, true, true, true),
+            (.done, false, false, true),
+            (.done, false, true, true),
+            (.done, true, false, false),
+            (.done, true, true, true),
+            (.failed("Transcription failed."), false, false, false),
+            (.failed("Transcription failed."), false, true, false),
+            (.failed("Transcription failed."), true, false, false),
+            (.failed("Transcription failed."), true, true, false),
+        ]
+        for (status, isLive, enabled, expected) in cases {
+            #expect(CopilotSettings(askWhileLive: enabled).canAsk(status: status, isLive: isLive) == expected,
+                    "status: \(status), live: \(isLive), flag: \(enabled)")
+        }
+    }
+
     @Test(arguments: ["", "not JSON", "{}", #"{"retiredFlag":true}"#, #"{"fastLiveWindow":"yes"}"#])
     func absentOrInvalidSavedFlagsUseDefaults(_ json: String) {
         let defaults = Fixtures.temporaryDefaults()
