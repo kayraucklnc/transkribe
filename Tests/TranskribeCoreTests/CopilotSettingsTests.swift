@@ -10,6 +10,27 @@ import Testing
         #expect(!settings.fastLiveWindow)
     }
 
+    @Test func mcpShowsLiveAskWithoutEnablingTypedQuestions() {
+        let settings = CopilotSettings(mcpServer: true)
+        #expect(settings.showsInsights(isLive: true))
+        #expect(!settings.canAsk(status: .transcribing, isLive: true))
+        #expect(!CopilotSettings.default.showsInsights(isLive: true))
+        #expect(CopilotSettings.default.showsInsights(isLive: false))
+    }
+
+    @Test func mcpSettingsPersistWithoutSecretsAndDecodeOldData() throws {
+        let old = try JSONDecoder().decode(CopilotSettings.self, from: Data("{}".utf8))
+        #expect(!old.mcpServer)
+        #expect(old.mcpPort == 7788)
+        #expect(old.mcpReadScopeDays == 7)
+        let settings = CopilotSettings(mcpServer: true, mcpPort: 8899, mcpReadScopeDays: 3)
+        let data = try JSONEncoder().encode(settings)
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays"])
+        #expect(!String(decoding: data, as: UTF8.self).lowercased().contains("token"))
+        #expect(try JSONDecoder().decode(CopilotSettings.self, from: data) == settings)
+    }
+
     @Test func liveAskFlagDefaultsAndPersistsIndependently() throws {
         let old = try JSONDecoder().decode(CopilotSettings.self,
             from: Data(#"{"fastLiveWindow":true}"#.utf8))
