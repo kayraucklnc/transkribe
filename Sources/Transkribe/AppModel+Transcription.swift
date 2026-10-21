@@ -109,7 +109,7 @@ extension AppModel {
         let quality = overrideQuality ?? settings.quality
         let id = transcript.id
         let progress = PipelineProgress(trackCount: sources.count)
-        let planner: WindowPlanner = isLive ? .live : .file
+        let planner = copilotSettings.windowPlanner(isLive: isLive)
 
         let results = try await withThrowingTaskGroup(of: (Int, TrackTranscriber.Result).self) { group in
             for (index, (track, source)) in sources.enumerated() {

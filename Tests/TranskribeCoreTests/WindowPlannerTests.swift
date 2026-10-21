@@ -14,6 +14,18 @@ import Testing
         #expect(planner.window(committed: 0, available: 31, sourceComplete: false) == .init(start: 0, end: 31, isFinal: false))
     }
 
+    @Test func fastLiveUsesShorterWindowsAndTailGuard() {
+        let fast = WindowPlanner.fastLive
+        #expect(fast.window(committed: 5, available: 15, sourceComplete: false) == nil)
+        #expect(fast.window(committed: 5, available: 16, sourceComplete: false) == .init(start: 5, end: 16, isFinal: false))
+        #expect(fast.window(committed: 5, available: 100, sourceComplete: false) == .init(start: 5, end: 65, isFinal: false))
+        #expect(fast.window(committed: 5, available: 9, sourceComplete: true) == .init(start: 5, end: 9, isFinal: true))
+
+        let result = fast.commit([segment(0, 17), segment(17, 18)], in: .init(start: 0, end: 20, isFinal: false))
+        #expect(result.segments.map(\.end) == [17])
+        #expect(result.committedUntil == 17)
+    }
+
     @Test func capsWindowLength() {
         #expect(planner.window(committed: 10, available: 500, sourceComplete: true) == .init(start: 10, end: 130, isFinal: false))
     }

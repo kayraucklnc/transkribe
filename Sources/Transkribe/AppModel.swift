@@ -66,6 +66,16 @@ final class AppModel {
             }
         }
     }
+    var copilotSettings: CopilotSettings {
+        didSet {
+            copilotSettings.save()
+            if oldValue.mcpServer != copilotSettings.mcpServer || oldValue.mcpPort != copilotSettings.mcpPort
+                || oldValue.mcpReadScopeDays != copilotSettings.mcpReadScopeDays {
+                copilotSettingsChanged?()
+            }
+        }
+    }
+    var copilotSettingsChanged: (() -> Void)?
     var enhanceTask: Task<Void, Never>?
     var people: [Person] = []
     let peopleStore = PeopleStore()
@@ -94,6 +104,7 @@ final class AppModel {
         self.store = store
         let settings = TranscriptionSettings.load()
         self.settings = settings
+        self.copilotSettings = CopilotSettings.load()
         self.engine = Self.makeEngine(settings: settings, quality: settings.quality, european: european)
         self.diarizer = diarizer
         recordingSource = UserDefaults.standard.string(forKey: Self.sourceKey).flatMap(RecordingSource.init) ?? .microphone

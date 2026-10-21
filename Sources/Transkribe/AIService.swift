@@ -30,7 +30,7 @@ final class AIService {
 
     init(model: AppModel) {
         self.model = model
-        providers = [ClaudeCodeProvider(), AppleIntelligenceProvider(), AnthropicAPIProvider()]
+        providers = [ClaudeCodeProvider(), AppleIntelligenceProvider(), AnthropicAPIProvider(), XAIProvider()]
         let saved = UserDefaults.standard.data(forKey: Self.selectionKey).flatMap { try? JSONDecoder().decode(AIModel.self, from: $0) }
         selectedModel = saved ?? ClaudeCodeProvider.sonnet
         Task { await refreshAvailability() }
@@ -51,7 +51,8 @@ final class AIService {
             availability[provider.kind] = await provider.availability()
         }
         // Prefer a model that actually works over a remembered one that doesn't.
-        if !isAvailable(selectedModel), let working = allModels.first(where: isAvailable) {
+        if !isAvailable(selectedModel),
+           let working = AIModelSelection.automaticFallback(models: allModels, availability: availability) {
             selectedModel = working
         }
     }
@@ -140,14 +141,18 @@ final class AIService {
     // MARK: - Questions
 
     func ask(_ question: String, about transcript: Transcript) {
+        guard let appModel = model else { return }
+        let transcript = appModel.transcript(transcript.id) ?? transcript
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let provider = provider(for: selectedModel) else { return }
+        guard appModel.copilotSettings.canAsk(status: transcript.status, isLive: appModel.liveRecordingID == transcript.id),
+              !isAnswering(transcript.id), !trimmed.isEmpty, isAvailable(selectedModel),
+              let provider = provider(for: selectedModel) else { return }
         let id = transcript.id
         let chosen = selectedModel
         let history = transcript.chat?.messages ?? []
-        model?.update(id, persist: true) {
+        appModel.update(id, persist: true) {
             var chat = $0.chat ?? AIChat()
-            chat.messages.append(AIMessage(role: .user, text: trimmed))
+            chat.messages.append(AIMessage(role: .user, text: trimmed, origin: .typed))
             chat.modelName = chosen.displayName
             $0.chat = chat
         }
@@ -162,7 +167,7 @@ final class AIService {
                 }
                 let answer = answerDrafts[id]?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 model?.update(id, persist: true) {
-                    $0.chat?.messages.append(AIMessage(role: .assistant, text: answer.isEmpty ? "(No answer)" : answer))
+                    $0.chat?.messages.append(AIMessage(role: .assistant, text: answer.isEmpty ? "(No answer)" : answer, origin: .typed))
                 }
                 answerDrafts[id] = nil
             } catch is CancellationError {
@@ -171,6 +176,10 @@ final class AIService {
                 answerDrafts[id, default: Draft()].error = error.localizedDescription
             }
         }
+    }
+
+    func isAnswering(_ id: Transcript.ID) -> Bool {
+        answerDrafts[id] != nil && answerDrafts[id]?.error == nil
     }
 
     func cancelAnswer(_ id: Transcript.ID) {

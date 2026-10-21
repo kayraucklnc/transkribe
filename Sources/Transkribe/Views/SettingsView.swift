@@ -32,6 +32,10 @@ private struct TranscriptionSettingsTab: View {
                 Section(title: "How Transkribe listens") {
                     QualityPicker(quality: $model.settings.quality, languages: model.settings.languages)
                 }
+                Section(title: "Live transcription") {
+                    Toggle("Faster live text (uses more CPU)", isOn: $model.copilotSettings.fastLiveWindow)
+                        .toggleStyle(.switch)
+                }
                 Section(title: "Background improvement") {
                     Toggle(isOn: $model.settings.enhanceWhenIdle) {
                         VStack(alignment: .leading, spacing: 3) {
@@ -198,13 +202,27 @@ private struct Section<Content: View>: View {
 
 private struct AISettingsTab: View {
     @Environment(AIService.self) private var ai
+    @Environment(AppModel.self) private var model
     @State private var apiKey = ""
     @State private var saved = false
+    @State private var xaiKey = ""
+    @State private var xaiKeySaved = false
+    @State private var xaiKeyError: String?
     private let keychain = KeychainStore()
 
     var body: some View {
         @Bindable var ai = ai
+        @Bindable var model = model
         Form {
+            SwiftUI.Section {
+                Toggle("Ask while recording", isOn: $model.copilotSettings.askWhileLive)
+            } header: {
+                Text("Live questions")
+            } footer: {
+                Text("Answers use the transcript so far and the selected model. This option is off by default.")
+            }
+            MCPServerSettings()
+            WebhookSettings()
             SwiftUI.Section("AI model") {
                 Picker("Default model", selection: $ai.selectedModel) {
                     ForEach(ai.allModels) { model in
@@ -241,6 +259,42 @@ private struct AISettingsTab: View {
                 Text("Anthropic API key (optional)")
             } footer: {
                 Text("Only needed if you don't use Claude Code. Stored in your Keychain.")
+            }
+            SwiftUI.Section {
+                SecureField("xai-…", text: $xaiKey)
+                    .accessibilityLabel("xAI API key")
+                HStack {
+                    Button("Save xAI Key") {
+                        do {
+                            try keychain.set(xaiKey.trimmingCharacters(in: .whitespacesAndNewlines), account: XAIProvider.keychainAccount)
+                            xaiKey = ""
+                            xaiKeySaved = true
+                            xaiKeyError = nil
+                            Task { await ai.refreshAvailability() }
+                        } catch {
+                            xaiKeySaved = false
+                            xaiKeyError = error.localizedDescription
+                        }
+                    }
+                    .disabled(xaiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Remove xAI Key", role: .destructive) {
+                        do {
+                            try keychain.delete(account: XAIProvider.keychainAccount)
+                            xaiKey = ""
+                            xaiKeySaved = false
+                            xaiKeyError = nil
+                            Task { await ai.refreshAvailability() }
+                        } catch {
+                            xaiKeyError = error.localizedDescription
+                        }
+                    }
+                    if xaiKeySaved { Text("Saved to Keychain").foregroundStyle(.secondary) }
+                }
+                if let xaiKeyError { Text(xaiKeyError).foregroundStyle(.red) }
+            } header: {
+                Text("xAI API key (optional)")
+            } footer: {
+                Text("Selecting Grok sends the transcript and questions to xAI. Grok can search the web and X. Transkribe stores the key in Keychain.")
             }
         }
         .formStyle(.grouped)

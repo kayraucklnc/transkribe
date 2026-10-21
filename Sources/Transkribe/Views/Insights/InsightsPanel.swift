@@ -4,6 +4,8 @@ import TranskribeCore
 /// Summary and questions about the open conversation, using the model the user picked.
 struct InsightsPanel: View {
     let transcript: Transcript
+    var isLive = false
+    @Environment(AppModel.self) private var model
     @AppStorage("insightsTab") private var tab = Tab.summary
     @Namespace private var tabSelection
 
@@ -24,18 +26,23 @@ struct InsightsPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                // Narrow panels show only the open tab's name; the others keep their icon.
-                ViewThatFits(in: .horizontal) {
-                    tabs(compact: false)
-                    tabs(compact: true)
+                if isLive {
+                    Label(Tab.ask.rawValue, systemImage: Tab.ask.symbol)
+                        .font(.callout.weight(.semibold))
+                } else {
+                    // Narrow panels show only the open tab's name; the others keep their icon.
+                    ViewThatFits(in: .horizontal) {
+                        tabs(compact: false)
+                        tabs(compact: true)
+                    }
                 }
                 Spacer()
-                ModelPicker()
+                if !isLive || model.copilotSettings.askWhileLive { ModelPicker() }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             Group {
-                switch tab {
+                switch isLive ? .ask : tab {
                 case .summary: SummaryTab(transcript: transcript)
                 case .todos: ActionItemsTab(transcript: transcript)
                 case .ask: AskTab(transcript: transcript)
@@ -143,6 +150,7 @@ struct ModelPicker: View {
     static func shortName(_ model: AIModel) -> String {
         switch model.provider {
         case .appleIntelligence: "On-device"
+        case .xai: model.displayName
         case .claudeCode, .anthropicAPI:
             model.displayName
                 .replacingOccurrences(of: " (Claude Code)", with: "")
@@ -155,6 +163,7 @@ struct ModelPicker: View {
         case .claudeCode: "Claude · your Claude Code login"
         case .appleIntelligence: "On this Mac · private"
         case .anthropicAPI: "Claude · API key"
+        case .xai: "Grok · xAI API key"
         }
     }
 
@@ -163,6 +172,7 @@ struct ModelPicker: View {
         case .claudeCode: "terminal"
         case .appleIntelligence: "apple.intelligence"
         case .anthropicAPI: "key"
+        case .xai: "globe"
         }
     }
 }
@@ -347,8 +357,18 @@ private struct SummarizeHero: View {
 private struct AskTab: View {
     let transcript: Transcript
     @Environment(AIService.self) private var ai
+    @Environment(AppModel.self) private var model
     @State private var question = ""
     @FocusState private var focused: Bool
+
+    private var allowsTyping: Bool {
+        model.liveRecordingID != transcript.id || model.copilotSettings.askWhileLive
+    }
+
+    private var canSend: Bool {
+        model.copilotSettings.canAsk(status: transcript.status, isLive: model.liveRecordingID == transcript.id)
+            && !transcript.segments.isEmpty && ai.isAvailable(ai.selectedModel) && !ai.isAnswering(transcript.id)
+    }
 
     var body: some View {
         let messages = transcript.chat?.messages ?? []
@@ -358,7 +378,12 @@ private struct AskTab: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         if messages.isEmpty, draft == nil {
-                            Suggestions(transcript: transcript) { send($0) }
+                            if allowsTyping {
+                                Suggestions(transcript: transcript) { send($0) }.disabled(!canSend)
+                            } else {
+                                Text("Agent answers will appear here.")
+                                    .font(.callout).foregroundStyle(.secondary)
+                            }
                         }
                         ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
                             ChatMessageView(message: message)
@@ -377,11 +402,13 @@ private struct AskTab: View {
                     .padding(16)
                 }
                 .onChange(of: draft?.text) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
-                .onChange(of: messages.count) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+                .onChange(of: messages.last) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
-            Composer(question: $question, focused: $focused, isAnswering: draft != nil && draft?.error == nil,
-                     onSend: { send(question) }, onStop: { ai.cancelAnswer(transcript.id) })
-                .padding(12)
+            if allowsTyping {
+                Composer(question: $question, focused: $focused, isAnswering: draft != nil && draft?.error == nil,
+                         onSend: { send(question) }, onStop: { ai.cancelAnswer(transcript.id) }, canSend: canSend)
+                    .padding(12)
+            }
         }
         .contextMenu {
             Button("Clear Conversation") { ai.clearChat(transcript.id) }
@@ -390,8 +417,7 @@ private struct AskTab: View {
     }
 
     private func send(_ text: String) {
-        guard transcript.status == .done, ai.isAvailable(ai.selectedModel),
-              !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard canSend, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         ai.ask(text, about: transcript)
         question = ""
     }
@@ -410,6 +436,8 @@ private struct ChatMessageView: View {
                 .background(Theme.myBubble, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.leading, 40)
+        } else if message.origin == .agent {
+            AgentAnswerView(message: message)
         } else {
             AssistantBubble { MarkdownView(markdown: message.text) }
         }
@@ -458,6 +486,7 @@ struct Composer: View {
     let isAnswering: Bool
     let onSend: () -> Void
     let onStop: () -> Void
+    var canSend = true
     var placeholder = "Ask about this conversation…"
 
     var body: some View {
@@ -466,7 +495,10 @@ struct Composer: View {
                 .textFieldStyle(.plain)
                 .lineLimit(1...4)
                 .focused(focused)
-                .onSubmit(onSend)
+                .onSubmit {
+                    guard canSend, !isAnswering else { return }
+                    onSend()
+                }
                 .padding(.vertical, 6)
             if isAnswering {
                 Button(action: onStop) {
@@ -487,7 +519,7 @@ struct Composer: View {
                         .background(question.isEmpty ? AnyShapeStyle(Color.secondary.opacity(0.4)) : AnyShapeStyle(Theme.myBubble), in: Circle())
                 }
                 .buttonStyle(.plain)
-                .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(!canSend || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(.leading, 16)

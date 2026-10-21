@@ -38,6 +38,7 @@ extension AppModel {
                 session = (recorder, transcript)
                 recordingState = .recording(since: Date())
                 startLiveTranscription(of: transcript, recorder: recorder)
+                sendWebhook(.meetingStarted, for: transcript)
             } catch {
                 try? store.delete(transcript)
                 recordingState = .idle
@@ -49,6 +50,8 @@ extension AppModel {
     func stopRecording() {
         guard case .recording = recordingState, let (recorder, draft) = session else { return }
         recordingState = .stopping
+        update(draft.id, persist: true) { $0.recordingEndedAt = Date() }
+        sendWebhook(.meetingEnded, for: transcript(draft.id) ?? draft)
         session = nil
         Task {
             defer {
@@ -94,6 +97,7 @@ extension AppModel {
     /// Shows the recording as a transcript right away and transcribes it in batches while it runs.
     private func startLiveTranscription(of draft: Transcript, recorder: RecordingSession) {
         var transcript = draft
+        transcript.recordingEndedAt = nil
         transcript.status = .transcribing
         transcript.tracks = recorder.liveTracks.map { track in
             AudioTrack(fileName: track.source == .microphone ? RecordingSession.microphoneFile : RecordingSession.systemFile,
@@ -134,6 +138,8 @@ extension AppModel {
         live?.task.cancel()
         live = nil
         var transcript = self.transcript(draft.id) ?? draft
+        transcript.recordingEndedAt = Date()
+        sendWebhook(.meetingEnded, for: transcript)
         if let tracks = try? await recorder.stop() {
             transcript.tracks = tracks
             transcript.duration = await duration(of: transcript)
