@@ -3,6 +3,18 @@ import Testing
 @testable import TranskribeCore
 
 @Suite struct MCPLiveToolsTests {
+    @Test func reconfiguringReadScopeKeepsActiveAnswerIDs() throws {
+        let transcript = Transcript(title: "Live", tracks: [])
+        let snapshots = { [MCPConversationSnapshot(transcript: transcript, isLive: true)] }
+        let first = MCPLiveTools(snapshots: snapshots)
+        let answer = try first.answerStore.post(conversationId: transcript.id, markdown: "First")
+        let reconfigured = MCPLiveTools(snapshots: snapshots, readScopeDays: 1, answerStore: first.answerStore)
+        let server = MCPServer(library: { ConversationLibrary(transcripts: [], people: []) }, extraTools: reconfigured.tools)
+        let result = server.call("update_answer", arguments: ["answerId": answer.id.uuidString, "markdown": "Final", "final": true])
+        #expect(!result.isError)
+        #expect(first.answerStore.answers(for: transcript.id).first?.markdown == "Final")
+    }
+
     @Test func extraToolsAreOptInAndCanReplaceAReadTool() throws {
         let library = { ConversationLibrary(transcripts: [], people: []) }
         let replacement = MCPTool(name: "read_conversation", description: "Read a current transcript.",

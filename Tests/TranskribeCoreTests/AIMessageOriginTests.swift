@@ -3,6 +3,14 @@ import Testing
 @testable import TranskribeCore
 
 @Suite struct AIMessageOriginTests {
+    @Test func recordingEndTimeIsOptionalAndPersists() throws {
+        var transcript = Transcript(title: "Meeting", tracks: [])
+        let old = try JSONEncoder().encode(transcript)
+        #expect(try JSONDecoder().decode(Transcript.self, from: old).recordingEndedAt == nil)
+        transcript.recordingEndedAt = Date(timeIntervalSince1970: 1_000_000)
+        #expect(try JSONDecoder().decode(Transcript.self, from: JSONEncoder().encode(transcript)).recordingEndedAt == transcript.recordingEndedAt)
+    }
+
     @Test func oldChatsDecodeAndAgentMetadataRoundTrips() throws {
         let old = try JSONDecoder().decode(AIChat.self,
             from: Data(#"{"messages":[{"role":"assistant","text":"Old answer"}]}"#.utf8))

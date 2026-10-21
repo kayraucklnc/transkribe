@@ -38,12 +38,17 @@ public struct AIMessage: Codable, Hashable, Sendable {
     public var text: String
     public var origin: Origin?
     public var answerId: UUID?
+    public var isFinal: Bool?
+    public var agentTimings: AgentAnswerTimings?
 
-    public init(role: Role, text: String, origin: Origin? = nil, answerId: UUID? = nil) {
+    public init(role: Role, text: String, origin: Origin? = nil, answerId: UUID? = nil,
+                isFinal: Bool? = nil, agentTimings: AgentAnswerTimings? = nil) {
         self.role = role
         self.text = text
         self.origin = origin
         self.answerId = answerId
+        self.isFinal = isFinal
+        self.agentTimings = agentTimings
     }
 }
 

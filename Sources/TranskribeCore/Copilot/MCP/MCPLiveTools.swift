@@ -10,11 +10,12 @@ public struct MCPLiveTools {
     private let now: () -> Date
 
     /// History scope uses the transcript creation time. Supply the stop time for ended recordings that can receive answers.
-    public init(snapshots: @escaping () -> [MCPConversationSnapshot], readScopeDays: Int = 7, now: @escaping () -> Date = Date.init) {
+    public init(snapshots: @escaping () -> [MCPConversationSnapshot], readScopeDays: Int = 7,
+                now: @escaping () -> Date = Date.init, answerStore: AnswerStore? = nil) {
         self.readScopeDays = max(0, readScopeDays)
         self.snapshots = snapshots
         self.now = now
-        self.answerStore = AnswerStore(snapshots: snapshots, now: now)
+        self.answerStore = answerStore ?? AnswerStore(snapshots: snapshots, now: now)
     }
 
     public var tools: [MCPTool] {
@@ -69,6 +70,7 @@ public struct MCPLiveTools {
         guard transcripts.contains(where: { $0.id == uuid }) else {
             return ("The conversation ID is unknown or outside the read scope.", true)
         }
+        answerStore.recordRead(conversationId: uuid)
         let result = ConversationLibrary(transcripts: transcripts, people: library.people)
             .conversation(id: id, from: number(arguments["from"]), to: number(arguments["to"]))
         return (result, false)
