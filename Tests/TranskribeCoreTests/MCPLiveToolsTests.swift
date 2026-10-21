@@ -3,6 +3,35 @@ import Testing
 @testable import TranskribeCore
 
 @Suite struct MCPLiveToolsTests {
+    @Test(arguments: [101, Int.max])
+    func conversationToolsClampLargeLimits(limit: Int) throws {
+        let transcripts = (0..<101).map { index in
+            Transcript(title: "Meeting \(index)", createdAt: Date(timeIntervalSince1970: Double(index)), tracks: [],
+                segments: [.init(start: 0, end: 1, text: "Matching words")], status: .done)
+        }
+        let server = MCPServer(library: { ConversationLibrary(transcripts: transcripts, people: []) })
+        let search = try rpcCall(server, "search_conversations", ["query": "Matching", "limit": limit])
+        #expect(!search.isError)
+        #expect(search.text.contains("showing 100,"))
+        let list = try rpcCall(server, "list_conversations", ["limit": limit])
+        #expect(!list.isError)
+        #expect(list.text.split(separator: "\n").count == 100)
+        #expect(try rpcCall(server, "search_conversations", ["query": "Matching"]).text.contains("showing 25,"))
+        #expect(try rpcCall(server, "list_conversations", [:]).text.split(separator: "\n").count == 30)
+    }
+
+    @Test(arguments: [0, -1])
+    func conversationToolsRejectNonpositiveLimits(limit: Int) throws {
+        let transcript = Transcript(title: "Meeting", tracks: [],
+            segments: [.init(start: 0, end: 1, text: "Matching words")], status: .done)
+        let server = MCPServer(library: { ConversationLibrary(transcripts: [transcript], people: []) })
+        for tool in ["search_conversations", "list_conversations"] {
+            let result = try rpcCall(server, tool, ["query": "Matching", "limit": limit])
+            #expect(result.isError)
+            #expect(result.text == "The limit must be at least 1.")
+        }
+    }
+
     @Test func reconfiguringReadScopeKeepsActiveAnswerIDs() throws {
         let transcript = Transcript(title: "Live", tracks: [])
         let snapshots = { [MCPConversationSnapshot(transcript: transcript, isLive: true)] }
