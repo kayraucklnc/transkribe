@@ -2,7 +2,7 @@ import Foundation
 
 /// Maps one HTTP request to one MCP response without opening a network listener.
 public struct MCPHTTPHandler {
-    public struct Request {
+    public struct Request: Sendable {
         public let method: String
         public let path: String
         public let headers: [String: String]
@@ -16,7 +16,7 @@ public struct MCPHTTPHandler {
         }
     }
 
-    public struct Response {
+    public struct Response: Sendable {
         public let statusCode: Int
         public let headers: [String: String]
         public let body: Data
