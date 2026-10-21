@@ -29,7 +29,8 @@ public struct AgentAnswer: Equatable, Identifiable, Sendable {
     public var updatedAt: Date
 }
 
-/// Stores agent answers in memory. All access uses the same lock.
+/// Stores agent answers in memory. All answer access uses the same lock.
+/// Snapshot and clock closures run before the lock. They must support concurrent calls.
 public final class AnswerStore: @unchecked Sendable {
     private let lock = NSLock()
     private let snapshots: () -> [MCPConversationSnapshot]
@@ -43,10 +44,11 @@ public final class AnswerStore: @unchecked Sendable {
     }
 
     public func post(conversationId: UUID, markdown: String) throws -> AgentAnswer {
+        let conversations = snapshots()
+        let time = now()
         lock.lock()
         defer { lock.unlock() }
-        let time = now()
-        try validate(conversationId: conversationId, markdown: markdown, at: time)
+        try validate(conversationId: conversationId, markdown: markdown, snapshots: conversations, at: time)
         let answer = AgentAnswer(id: UUID(), conversationId: conversationId, markdown: markdown,
                                  isFinal: false, createdAt: time, updatedAt: time)
         stored[answer.id] = answer
@@ -54,12 +56,13 @@ public final class AnswerStore: @unchecked Sendable {
     }
 
     public func update(answerId: UUID, markdown: String, final: Bool) throws -> AgentAnswer {
+        let conversations = snapshots()
+        let time = now()
         lock.lock()
         defer { lock.unlock() }
         guard var answer = stored[answerId] else { throw AnswerStoreError.unknownAnswer }
         guard !answer.isFinal else { throw AnswerStoreError.alreadyFinal }
-        let time = now()
-        try validate(conversationId: answer.conversationId, markdown: markdown, at: time)
+        try validate(conversationId: answer.conversationId, markdown: markdown, snapshots: conversations, at: time)
         let recent = (updateTimes[answerId] ?? []).filter { time.timeIntervalSince($0) < 60 }
         guard recent.count < 30 else { throw AnswerStoreError.rateLimited }
         updateTimes[answerId] = recent + [time]
@@ -76,8 +79,8 @@ public final class AnswerStore: @unchecked Sendable {
         return stored.values.filter { $0.conversationId == conversationId }.sorted { $0.createdAt < $1.createdAt }
     }
 
-    private func validate(conversationId: UUID, markdown: String, at time: Date) throws {
-        guard let conversation = snapshots().first(where: { $0.transcript.id == conversationId }) else {
+    private func validate(conversationId: UUID, markdown: String, snapshots: [MCPConversationSnapshot], at time: Date) throws {
+        guard let conversation = snapshots.first(where: { $0.transcript.id == conversationId }) else {
             throw AnswerStoreError.unknownConversation
         }
         if !conversation.isLive {

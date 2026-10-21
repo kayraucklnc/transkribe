@@ -9,6 +9,7 @@ public struct MCPLiveTools {
     private let snapshots: () -> [MCPConversationSnapshot]
     private let now: () -> Date
 
+    /// History scope uses the transcript creation time. Supply the stop time for ended recordings that can receive answers.
     public init(snapshots: @escaping () -> [MCPConversationSnapshot], readScopeDays: Int = 7, now: @escaping () -> Date = Date.init) {
         self.readScopeDays = max(0, readScopeDays)
         self.snapshots = snapshots

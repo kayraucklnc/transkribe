@@ -101,4 +101,26 @@ import Testing
         #expect(final.isFinal)
     }
 
+    @Test func snapshotProviderCanReadExistingAnswers() throws {
+        let transcript = Transcript(title: "Live", tracks: [])
+        weak var store: AnswerStore?
+        let current = AnswerStore(snapshots: {
+            _ = store?.answers(for: transcript.id)
+            return [.init(transcript: transcript, isLive: true)]
+        })
+        store = current
+        let completed = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            if let answer = try? current.post(conversationId: transcript.id, markdown: "First") {
+                _ = try? current.update(answerId: answer.id, markdown: "Updated", final: true)
+            }
+            completed.signal()
+        }
+        let result = completed.wait(timeout: .now() + 2)
+        #expect(result == .success)
+        if result == .success {
+            #expect(current.answers(for: transcript.id).first?.markdown == "Updated")
+        }
+    }
+
 }
