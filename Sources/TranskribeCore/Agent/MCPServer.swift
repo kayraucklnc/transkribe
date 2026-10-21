@@ -4,9 +4,14 @@ import Foundation
 /// exposes the conversation library as tools, so an AI client can look things up itself.
 public final class MCPServer: @unchecked Sendable {
     private let library: () -> ConversationLibrary
+    private let extraTools: [MCPTool]
+    private let scopeFilter: ((Transcript) -> Bool)?
 
-    public init(library: @escaping () -> ConversationLibrary) {
+    public init(library: @escaping () -> ConversationLibrary, extraTools: [MCPTool] = [],
+                scopeFilter: ((Transcript) -> Bool)? = nil) {
         self.library = library
+        self.extraTools = extraTools
+        self.scopeFilter = scopeFilter
     }
 
     public static let tools: [[String: Any]] = [
@@ -35,7 +40,10 @@ public final class MCPServer: @unchecked Sendable {
 
     /// Runs a tool by name. Shared with in-app agents that don't speak MCP.
     public func call(_ name: String, arguments: [String: Any]) -> (text: String, isError: Bool) {
-        let library = library()
+        let library = scopedLibrary()
+        if let tool = extraTools.last(where: { $0.name == name }) {
+            return tool.handler(arguments, library)
+        }
         switch name {
         case "search_conversations":
             guard let query = arguments["query"] as? String else { return ("Missing “query”.", true) }
@@ -72,7 +80,7 @@ public final class MCPServer: @unchecked Sendable {
         case "ping":
             return reply(id: id, result: [:])
         case "tools/list":
-            return reply(id: id, result: ["tools": Self.tools])
+            return reply(id: id, result: ["tools": availableTools])
         case "tools/call":
             let name = params["name"] as? String ?? ""
             let result = call(name, arguments: params["arguments"] as? [String: Any] ?? [:])
@@ -88,6 +96,26 @@ public final class MCPServer: @unchecked Sendable {
             guard !line.trimmingCharacters(in: .whitespaces).isEmpty, let response = handle(line: line) else { continue }
             FileHandle.standardOutput.write(Data((response + "\n").utf8))
         }
+    }
+
+    private var availableTools: [[String: Any]] {
+        var definitions = Self.tools
+        for tool in extraTools {
+            if let index = definitions.firstIndex(where: { $0["name"] as? String == tool.name }) {
+                definitions[index] = tool.definition
+            } else {
+                definitions.append(tool.definition)
+            }
+        }
+        return definitions
+    }
+
+    private func scopedLibrary() -> ConversationLibrary {
+        let source = library()
+        guard let scopeFilter else { return source }
+        let transcripts = source.transcripts.filter(scopeFilter)
+        let peopleIDs = Set(transcripts.flatMap { $0.speakerPeople.values })
+        return ConversationLibrary(transcripts: transcripts, people: source.people.filter { peopleIDs.contains($0.id) })
     }
 
     private func number(_ value: Any?) -> TimeInterval? {
