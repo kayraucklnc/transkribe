@@ -12,6 +12,7 @@ struct ConversationView: View {
     @State private var isJoining = false
 
     private var isLive: Bool { model.liveRecordingID == transcript.id }
+    private var allowsInsights: Bool { !isLive || model.copilotSettings.askWhileLive }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -48,8 +49,8 @@ struct ConversationView: View {
             .frame(minWidth: 380, maxWidth: .infinity)
             .layoutPriority(1)
             .background(Theme.canvas)
-            if showsInsights, !isLive {
-                InsightsPanel(transcript: transcript)
+            if showsInsights, allowsInsights {
+                InsightsPanel(transcript: transcript, isLive: isLive)
                     .frame(width: 380)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
@@ -148,7 +149,7 @@ struct ConversationView: View {
                 Label("Insights", systemImage: "sparkles")
             }
             .help("Summary and questions")
-            .disabled(isLive)
+            .disabled(!allowsInsights)
         }
     }
 

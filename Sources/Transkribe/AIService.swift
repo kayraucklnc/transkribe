@@ -140,12 +140,16 @@ final class AIService {
     // MARK: - Questions
 
     func ask(_ question: String, about transcript: Transcript) {
+        guard let appModel = model else { return }
+        let transcript = appModel.transcript(transcript.id) ?? transcript
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let provider = provider(for: selectedModel) else { return }
+        guard appModel.copilotSettings.canAsk(status: transcript.status, isLive: appModel.liveRecordingID == transcript.id),
+              !isAnswering(transcript.id), !trimmed.isEmpty, isAvailable(selectedModel),
+              let provider = provider(for: selectedModel) else { return }
         let id = transcript.id
         let chosen = selectedModel
         let history = transcript.chat?.messages ?? []
-        model?.update(id, persist: true) {
+        appModel.update(id, persist: true) {
             var chat = $0.chat ?? AIChat()
             chat.messages.append(AIMessage(role: .user, text: trimmed))
             chat.modelName = chosen.displayName
@@ -171,6 +175,10 @@ final class AIService {
                 answerDrafts[id, default: Draft()].error = error.localizedDescription
             }
         }
+    }
+
+    func isAnswering(_ id: Transcript.ID) -> Bool {
+        answerDrafts[id] != nil && answerDrafts[id]?.error == nil
     }
 
     func cancelAnswer(_ id: Transcript.ID) {
