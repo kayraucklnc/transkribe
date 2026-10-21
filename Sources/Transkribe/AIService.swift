@@ -46,6 +46,33 @@ final class AIService {
         availability[model.provider]?.isAvailable ?? false
     }
 
+    var decisionModelNotice: String? {
+        guard let chosen = model?.copilotSettings.decisionModel,
+              DecisionModelSelection.provider(for: chosen, providers: providers, availability: availability) == nil else { return nil }
+        let reason: String
+        switch availability[chosen.provider] {
+        case .unavailable(let detail)?: reason = detail
+        case .available?: reason = "The selected model is no longer offered."
+        case nil: return nil
+        }
+        return "Background work stopped. \(chosen.displayName) is unavailable. \(reason)"
+    }
+
+    func decisionProvider() async -> (any AIProvider)? {
+        guard let appModel = model else { return nil }
+        let chosen = appModel.copilotSettings.decisionModel
+        if let candidate = provider(for: chosen) {
+            let current = await candidate.availability()
+            guard appModel.copilotSettings.decisionModel == chosen else { return nil }
+            availability[chosen.provider] = current
+        }
+        guard let provider = DecisionModelSelection.provider(for: chosen, providers: providers, availability: availability) else {
+            appModel.show(message: decisionModelNotice ?? "Background work stopped. The selected decision model is unavailable.")
+            return nil
+        }
+        return provider
+    }
+
     func refreshAvailability() async {
         for provider in providers {
             availability[provider.kind] = await provider.availability()

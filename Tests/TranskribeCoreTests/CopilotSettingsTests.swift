@@ -3,6 +3,24 @@ import Testing
 @testable import TranskribeCore
 
 @Suite struct CopilotSettingsTests {
+    @Test func decisionModelDefaultsToHaikuAndPersistsIndependently() throws {
+        let old = try JSONDecoder().decode(CopilotSettings.self,
+            from: Data(#"{"fastLiveWindow":true}"#.utf8))
+        #expect(old.decisionModel == AnthropicAPIProvider.haiku)
+        #expect(old.fastLiveWindow)
+        let null = try JSONDecoder().decode(CopilotSettings.self,
+            from: Data(#"{"decisionModel":null}"#.utf8))
+        #expect(null.decisionModel == AnthropicAPIProvider.haiku)
+
+        let defaults = Fixtures.temporaryDefaults()
+        var settings = old
+        settings.decisionModel = AppleIntelligenceProvider.model
+        settings.save(to: defaults)
+        #expect(CopilotSettings.load(from: defaults).decisionModel == AppleIntelligenceProvider.model)
+        #expect(CopilotSettings.load(from: defaults).fastLiveWindow)
+        #expect(!CopilotSettings.load(from: defaults).askWhileLive)
+    }
+
     @Test(arguments: ["{}", #"{"retiredFlag":true}"#, #"{"fastLiveWindow":null,"futureFlag":true}"#])
     func missingFlagsDecodeToDefaults(_ json: String) throws {
         let settings = try JSONDecoder().decode(CopilotSettings.self, from: Data(json.utf8))
@@ -31,7 +49,7 @@ import Testing
         let data = try #require(defaults.data(forKey: "copilotSettings"))
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["webhook"] as? String == "https://webhook.example/events")
-        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "webhook"])
+        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "webhook", "decisionModel"])
     }
 
     @Test func mcpSettingsPersistWithoutSecretsAndDecodeOldData() throws {
@@ -42,7 +60,7 @@ import Testing
         let settings = CopilotSettings(mcpServer: true, mcpPort: 8899, mcpReadScopeDays: 3)
         let data = try JSONEncoder().encode(settings)
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays"])
+        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "decisionModel"])
         #expect(!String(decoding: data, as: UTF8.self).lowercased().contains("token"))
         #expect(try JSONDecoder().decode(CopilotSettings.self, from: data) == settings)
     }

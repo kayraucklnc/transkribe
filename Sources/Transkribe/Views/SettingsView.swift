@@ -223,6 +223,7 @@ private struct AISettingsTab: View {
             }
             MCPServerSettings()
             WebhookSettings()
+            DecisionModelSettings()
             SwiftUI.Section("AI model") {
                 Picker("Default model", selection: $ai.selectedModel) {
                     ForEach(ai.allModels) { model in
