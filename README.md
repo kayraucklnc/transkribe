@@ -41,6 +41,11 @@ Enable **Ask while recording** in Settings → AI to ask questions during a reco
 
 Add an xAI key in Settings → AI to select Grok for streamed answers with web and X search. Selecting Grok sends the transcript and questions to xAI. Transkribe stores the key in Keychain. Transkribe never selects Grok as an automatic fallback.
 
+**Settings → AI → Background work → Decision model** selects a separate model for background features.
+It defaults to Claude Haiku 4.5 through the Anthropic API. This setting does not enable background features.
+Apple Intelligence keeps this work on your Mac. Other choices send transcript text to their cloud provider.
+If the selected model becomes unavailable, background work stops with a notice. Transkribe never selects a replacement model.
+
 **Many languages.** Whisper handles almost any language; Parakeet is used for European languages where it is faster and more accurate. Pick the languages you speak and each stretch of audio is locked to one of them, which avoids misdetections and repetition loops. Search ignores accents, and Turkish ı/İ just works.
 
 ![A Turkish conversation](docs/screenshots/turkish.png)
