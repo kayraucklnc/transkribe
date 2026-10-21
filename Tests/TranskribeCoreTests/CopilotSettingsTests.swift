@@ -18,6 +18,22 @@ import Testing
         #expect(CopilotSettings.default.showsInsights(isLive: false))
     }
 
+    @Test func webhookDefaultsOffAndPersistsOnlyTheURL() throws {
+        let old = try JSONDecoder().decode(CopilotSettings.self, from: Data(#"{"fastLiveWindow":true}"#.utf8))
+        #expect(old.webhook == nil)
+        #expect(old.fastLiveWindow)
+        let null = try JSONDecoder().decode(CopilotSettings.self, from: Data(#"{"webhook":null}"#.utf8))
+        #expect(null == .default)
+        let defaults = Fixtures.temporaryDefaults()
+        let settings = CopilotSettings(webhook: URL(string: "https://webhook.example/events"))
+        settings.save(to: defaults)
+        #expect(CopilotSettings.load(from: defaults) == settings)
+        let data = try #require(defaults.data(forKey: "copilotSettings"))
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(json["webhook"] as? String == "https://webhook.example/events")
+        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "webhook"])
+    }
+
     @Test func mcpSettingsPersistWithoutSecretsAndDecodeOldData() throws {
         let old = try JSONDecoder().decode(CopilotSettings.self, from: Data("{}".utf8))
         #expect(!old.mcpServer)

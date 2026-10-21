@@ -38,6 +38,7 @@ extension AppModel {
                 session = (recorder, transcript)
                 recordingState = .recording(since: Date())
                 startLiveTranscription(of: transcript, recorder: recorder)
+                sendWebhook(.meetingStarted, for: transcript)
             } catch {
                 try? store.delete(transcript)
                 recordingState = .idle
@@ -50,6 +51,7 @@ extension AppModel {
         guard case .recording = recordingState, let (recorder, draft) = session else { return }
         recordingState = .stopping
         update(draft.id, persist: true) { $0.recordingEndedAt = Date() }
+        sendWebhook(.meetingEnded, for: transcript(draft.id) ?? draft)
         session = nil
         Task {
             defer {
@@ -137,6 +139,7 @@ extension AppModel {
         live = nil
         var transcript = self.transcript(draft.id) ?? draft
         transcript.recordingEndedAt = Date()
+        sendWebhook(.meetingEnded, for: transcript)
         if let tracks = try? await recorder.stop() {
             transcript.tracks = tracks
             transcript.duration = await duration(of: transcript)

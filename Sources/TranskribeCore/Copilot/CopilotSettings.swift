@@ -6,6 +6,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
     public var mcpServer: Bool
     public var mcpPort: UInt16
     public var mcpReadScopeDays: Int
+    public var webhook: URL?
 
     public static let `default` = CopilotSettings()
     private static let key = "copilotSettings"
@@ -16,15 +17,17 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         case mcpServer
         case mcpPort
         case mcpReadScopeDays
+        case webhook
     }
 
     public init(fastLiveWindow: Bool = false, askWhileLive: Bool = false, mcpServer: Bool = false,
-                mcpPort: UInt16 = 7788, mcpReadScopeDays: Int = 7) {
+                mcpPort: UInt16 = 7788, mcpReadScopeDays: Int = 7, webhook: URL? = nil) {
         self.fastLiveWindow = fastLiveWindow
         self.askWhileLive = askWhileLive
         self.mcpServer = mcpServer
         self.mcpPort = mcpPort
         self.mcpReadScopeDays = mcpReadScopeDays
+        self.webhook = webhook
     }
 
     public init(from decoder: Decoder) throws {
@@ -34,6 +37,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         mcpServer = try values.decodeIfPresent(Bool.self, forKey: .mcpServer) ?? false
         mcpPort = try values.decodeIfPresent(UInt16.self, forKey: .mcpPort) ?? 7788
         mcpReadScopeDays = try values.decodeIfPresent(Int.self, forKey: .mcpReadScopeDays) ?? 7
+        webhook = try values.decodeIfPresent(URL.self, forKey: .webhook)
     }
 
     public static func load(from defaults: UserDefaults = .standard) -> CopilotSettings {

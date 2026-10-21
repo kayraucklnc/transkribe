@@ -93,6 +93,12 @@ You can change the port and history scope, copy the token, or rotate it in Setti
 Agent answers appear in Ask while recording, with progress and timing details.
 Enable **Ask while recording** to type questions too. The server is off by default.
 
+To notify an agent when a meeting starts or ends, enter its webhook URL and bearer key in
+**Settings → AI → Agent webhook**, then select **Save webhook**. The key stays in Keychain.
+**Send test event** sends a sample `meeting.started` event. **Disable webhook** stops events.
+Webhook requests have a 10-second timeout, have no retries, and do not interrupt recording.
+Webhook events are off by default.
+
 ## Where things live
 
 | What | Where |
