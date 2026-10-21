@@ -87,6 +87,12 @@ claude mcp add transkribe /Applications/Transkribe.app/Contents/MacOS/transkribe
 
 Claude can then list, search and read your conversations and the people in them.
 
+For live agent access, enable **MCP server** in **Settings → AI → Agent access**.
+The app serves JSON MCP at `http://127.0.0.1:7788/mcp` and requires a bearer token stored in Keychain.
+You can change the port and history scope, copy the token, or rotate it in Settings.
+Agent answers appear in Ask while recording, with progress and timing details.
+Enable **Ask while recording** to type questions too. The server is off by default.
+
 ## Where things live
 
 | What | Where |

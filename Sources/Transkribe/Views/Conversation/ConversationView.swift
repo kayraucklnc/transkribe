@@ -12,7 +12,7 @@ struct ConversationView: View {
     @State private var isJoining = false
 
     private var isLive: Bool { model.liveRecordingID == transcript.id }
-    private var allowsInsights: Bool { !isLive || model.copilotSettings.askWhileLive }
+    private var allowsInsights: Bool { model.copilotSettings.showsInsights(isLive: isLive) }
 
     var body: some View {
         HStack(spacing: 0) {

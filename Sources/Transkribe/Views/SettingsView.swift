@@ -221,6 +221,7 @@ private struct AISettingsTab: View {
             } footer: {
                 Text("Answers use the transcript so far and the selected model. This option is off by default.")
             }
+            MCPServerSettings()
             SwiftUI.Section("AI model") {
                 Picker("Default model", selection: $ai.selectedModel) {
                     ForEach(ai.allModels) { model in

@@ -152,7 +152,7 @@ final class AIService {
         let history = transcript.chat?.messages ?? []
         appModel.update(id, persist: true) {
             var chat = $0.chat ?? AIChat()
-            chat.messages.append(AIMessage(role: .user, text: trimmed))
+            chat.messages.append(AIMessage(role: .user, text: trimmed, origin: .typed))
             chat.modelName = chosen.displayName
             $0.chat = chat
         }
@@ -167,7 +167,7 @@ final class AIService {
                 }
                 let answer = answerDrafts[id]?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 model?.update(id, persist: true) {
-                    $0.chat?.messages.append(AIMessage(role: .assistant, text: answer.isEmpty ? "(No answer)" : answer))
+                    $0.chat?.messages.append(AIMessage(role: .assistant, text: answer.isEmpty ? "(No answer)" : answer, origin: .typed))
                 }
                 answerDrafts[id] = nil
             } catch is CancellationError {

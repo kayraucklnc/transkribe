@@ -13,6 +13,7 @@ struct TranskribeApp: App {
                 .environment(delegate.model)
                 .environment(delegate.player)
                 .environment(delegate.ai)
+                .environment(delegate.mcp)
                 .frame(minWidth: 760, minHeight: 520)
         }
         .defaultSize(width: 1080, height: 720)
@@ -40,6 +41,7 @@ struct TranskribeApp: App {
                 .environment(delegate.calls)
                 .environment(delegate.dictation)
                 .environment(delegate.ai)
+                .environment(delegate.mcp)
                 .environment(delegate.model)
         }
 
@@ -64,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor let player = PlayerController()
     @MainActor lazy var ai = AIService(model: model)
     @MainActor lazy var dictation = DictationController(model: model)
+    @MainActor lazy var mcp = MCPServerController(model: model)
     @MainActor lazy var calls = CallMonitor(model: model)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -71,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             dictation.installShortcut()
             dictation.warmUp()
             calls.start()
+            _ = mcp
         }
     }
 
