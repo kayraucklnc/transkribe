@@ -8,6 +8,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
     public var mcpReadScopeDays: Int
     public var webhook: URL?
     public var decisionModel: AIModel
+    public var intents: Bool
 
     public static let `default` = CopilotSettings()
     private static let key = "copilotSettings"
@@ -20,11 +21,12 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         case mcpReadScopeDays
         case webhook
         case decisionModel
+        case intents
     }
 
     public init(fastLiveWindow: Bool = false, askWhileLive: Bool = false, mcpServer: Bool = false,
                 mcpPort: UInt16 = 7788, mcpReadScopeDays: Int = 7, webhook: URL? = nil,
-                decisionModel: AIModel = AnthropicAPIProvider.haiku) {
+                decisionModel: AIModel = AnthropicAPIProvider.haiku, intents: Bool = false) {
         self.fastLiveWindow = fastLiveWindow
         self.askWhileLive = askWhileLive
         self.mcpServer = mcpServer
@@ -32,6 +34,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         self.mcpReadScopeDays = mcpReadScopeDays
         self.webhook = webhook
         self.decisionModel = decisionModel
+        self.intents = intents
     }
 
     public init(from decoder: Decoder) throws {
@@ -42,6 +45,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         mcpPort = try values.decodeIfPresent(UInt16.self, forKey: .mcpPort) ?? 7788
         mcpReadScopeDays = try values.decodeIfPresent(Int.self, forKey: .mcpReadScopeDays) ?? 7
         webhook = try values.decodeIfPresent(URL.self, forKey: .webhook)
+        intents = try values.decodeIfPresent(Bool.self, forKey: .intents) ?? false
         decisionModel = try values.decodeIfPresent(AIModel.self, forKey: .decisionModel) ?? AnthropicAPIProvider.haiku
     }
 
@@ -61,7 +65,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
     }
 
     public func showsInsights(isLive: Bool) -> Bool {
-        !isLive || askWhileLive || mcpServer
+        !isLive || askWhileLive || mcpServer || intents
     }
 
     public func canAsk(status: TranscriptStatus, isLive: Bool) -> Bool {

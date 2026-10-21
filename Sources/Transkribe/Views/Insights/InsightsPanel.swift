@@ -37,7 +37,7 @@ struct InsightsPanel: View {
                     }
                 }
                 Spacer()
-                if !isLive || model.copilotSettings.askWhileLive { ModelPicker() }
+                if !isLive || model.copilotSettings.askWhileLive || model.copilotSettings.intents { ModelPicker() }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -388,6 +388,14 @@ private struct AskTab: View {
                         ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
                             ChatMessageView(message: message)
                         }
+                        if model.copilotSettings.intents, let controller = model.liveIntents,
+                           controller.meetingID == transcript.id {
+                            if let notice = controller.notice {
+                                Label(notice, systemImage: "exclamationmark.triangle.fill")
+                                    .font(.callout).foregroundStyle(.orange)
+                            }
+                            IntentCardsView(controller: controller)
+                        }
                         if let draft {
                             if let error = draft.error {
                                 ErrorCard(message: error) { ai.cancelAnswer(transcript.id) }
@@ -402,6 +410,8 @@ private struct AskTab: View {
                     .padding(16)
                 }
                 .onChange(of: draft?.text) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+                .onChange(of: model.liveIntents?.cards.last?.id) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+                .onChange(of: model.liveIntents?.cards.last?.answer) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
                 .onChange(of: messages.last) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
             if allowsTyping {

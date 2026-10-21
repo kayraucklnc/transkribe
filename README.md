@@ -171,9 +171,33 @@ The test sends a sample `meeting.started` event with a random conversation ID.
 That ID does not identify a readable meeting. Test MCP separately with a real recording.
 
 The JSON body contains `version` (1), `type`, `eventId`, `conversationId`, `title`, and `startedAt` (ISO 8601).
-Recording currently emits `meeting.started` and `meeting.ended`.
-The schema also supports `intent` with `id`, `instruction`, `request`, and `context`.
-Automatic spoken-intent detection requires later copilot features.
+Recording emits `meeting.started` and `meeting.ended`.
+With spoken intents enabled, a match also emits `intent` with `id`, `instruction`, `request`, and `context`.
+The request is a JSON-quoted string. The context is JSON speech data from the last two minutes.
+The instruction comes from the local configuration, not from speech.
+
+### Spoken intents
+
+Copy [docs/intents.example.json](docs/intents.example.json) to
+`~/Library/Application Support/Transkribe/intents.json`.
+Edit the fixed actions, then enable **Spoken intents** in **Settings → AI → Background work**.
+Changes to the file or decision model apply to the next meeting.
+A missing or invalid file disables intents and shows a notice.
+All intents are off by default. The decision model never uses a fallback provider.
+
+The example sends explicit Grok requests to the selected Ask model.
+Select Grok in the model picker to use the fast xAI path.
+The competitor intent uses the agent webhook above.
+The explicit request accepts only Me speech from a Mic + System recording.
+Me-only intents do not run with mic-only recordings.
+Confidence, cooldown, duplicate ranges, and a five-run meeting cap limit actions.
+
+Intent cards appear in the live Ask panel. **Mute for this meeting** stops that intent.
+**Dismiss** hides a card. Intent answers stream separately from typed questions.
+In Console, filter for subsystem `Transkribe` and category `Intents` to inspect lag records.
+Each record contains speech-end, commit, verdict, and action-dispatch times.
+The log also reports estimated input and output tokens per meeting for intent work.
+Estimates use one token per four characters because providers expose text deltas without usage counts.
 
 ### Routine instruction template
 

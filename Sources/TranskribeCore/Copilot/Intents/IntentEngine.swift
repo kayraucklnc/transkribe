@@ -41,6 +41,7 @@ public actor IntentEngine {
     private let model: AIModel
     private let maxRunsPerMeeting: Int
     private var meetings: [UUID: MeetingState] = [:]
+    private var mutedIntents: [UUID: Set<String>] = [:]
 
     public init(config: IntentConfig, provider: any AIProvider, model: AIModel, maxRunsPerMeeting: Int = 5) {
         self.config = config
@@ -52,16 +53,20 @@ public actor IntentEngine {
     /// A nil result means none. Provider errors propagate to the caller.
     public func evaluate(meetingID: UUID, committedSegments: [Segment], meIsReliable: Bool,
                          at now: Date = Date()) async throws -> IntentMatch? {
-        guard !config.intents.isEmpty, !committedSegments.isEmpty,
+        let intents = config.intents.filter {
+            !(mutedIntents[meetingID]?.contains($0.id) ?? false) && ($0.speakers != .me || meIsReliable)
+        }
+        guard !intents.isEmpty, !committedSegments.isEmpty,
               (meetings[meetingID]?.ranges.count ?? 0) < maxRunsPerMeeting else { return nil }
         let lines = committedSegments.map { Line(from: $0.start, to: $0.end, speaker: $0.speaker, text: $0.text) }
         let message = AIMessage(role: .user, text: try json(["transcript": lines]))
         var response = ""
-        for try await delta in provider.stream(model: model, system: try prompt(), messages: [message]) {
+        for try await delta in provider.stream(model: model, system: try prompt(intents: intents), messages: [message]) {
             response += delta
         }
         guard let verdict = try? JSONDecoder().decode(Verdict.self, from: Data(response.utf8)),
-              let intent = config.intents.first(where: { $0.id == verdict.intent }),
+              let intent = intents.first(where: { $0.id == verdict.intent }),
+              !(mutedIntents[meetingID]?.contains(intent.id) ?? false),
               verdict.confidence.isFinite, (0...1).contains(verdict.confidence),
               verdict.confidence >= intent.minConfidence,
               verdict.from.isFinite, verdict.to.isFinite,
@@ -90,8 +95,12 @@ public actor IntentEngine {
                            to: verdict.to, request: verdict.request)
     }
 
-    private func prompt() throws -> String {
-        let labels = config.intents.map { Label(id: $0.id, description: $0.description, examples: $0.examples) }
+    public func mute(_ intentID: String, meetingID: UUID) {
+        mutedIntents[meetingID, default: []].insert(intentID)
+    }
+
+    private func prompt(intents: [IntentDefinition]) throws -> String {
+        let labels = intents.map { Label(id: $0.id, description: $0.description, examples: $0.examples) }
         return """
         Classify the quoted transcript data into exactly one intent.
         Select an ID from the closed label list, or select none.
@@ -104,7 +113,7 @@ public actor IntentEngine {
         {"intent":"<ID or none>","confidence":0.0,"from":0.0,"to":0.0,"request":"<heard request>"}
         Use seconds for from and to. Select a range inside the supplied transcript.
         Use confidence between 0 and 1. Extract the request from the speech data.
-        Closed label list: \(try json(config.intents.map(\.id) + ["none"]))
+        Closed label list: \(try json(intents.map(\.id) + ["none"]))
         Intent definitions: \(try json(labels))
         """
     }
