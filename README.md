@@ -39,6 +39,8 @@ Enable **Ask while recording** in Settings → AI to ask questions during a reco
 
 **Pick your model.** Claude through your existing [Claude Code](https://claude.com/claude-code) login (no setup), Apple Intelligence fully on-device, or Claude with an API key stored in the Keychain.
 
+Add an xAI key in Settings → AI to select Grok for streamed answers with web and X search. Selecting Grok sends the transcript and questions to xAI. Transkribe stores the key in Keychain. Transkribe never selects Grok as an automatic fallback.
+
 **Many languages.** Whisper handles almost any language; Parakeet is used for European languages where it is faster and more accurate. Pick the languages you speak and each stretch of audio is locked to one of them, which avoids misdetections and repetition loops. Search ignores accents, and Turkish ı/İ just works.
 
 ![A Turkish conversation](docs/screenshots/turkish.png)

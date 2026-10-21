@@ -2,6 +2,31 @@ import Foundation
 import Testing
 @testable import TranskribeCore
 
+// A Responses API fixture based on the documented event format.
+// Tool and final-text events must not repeat deltas.
+private let recordedResponse = """
+: keep-alive
+
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_fixture","status":"in_progress"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"web_search_call","status":"in_progress"}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","output_index":1,"content_index":0,"delta":"Merhaba"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","output_index":1,"content_index":0,"delta":" ğüşİ 🌍"}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","text":"Merhaba ğüşİ 🌍"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_fixture","status":"completed"}}
+
+"""
+
 @Suite(.serialized) struct XAIProviderTests {
     @Test func availabilityRequiresANonemptyKey() async {
         #expect(await XAIProvider(apiKey: { nil }).availability()
@@ -147,31 +172,6 @@ import Testing
         #expect(firstDelta == "First take")
     }
 }
-
-// A Responses API fixture based on the documented event format.
-// Tool and final-text events must not repeat deltas.
-private let recordedResponse = """
-: keep-alive
-
-event: response.created
-data: {"type":"response.created","response":{"id":"resp_fixture","status":"in_progress"}}
-
-event: response.output_item.added
-data: {"type":"response.output_item.added","output_index":0,"item":{"type":"web_search_call","status":"in_progress"}}
-
-event: response.output_text.delta
-data: {"type":"response.output_text.delta","output_index":1,"content_index":0,"delta":"Merhaba"}
-
-event: response.output_text.delta
-data: {"type":"response.output_text.delta","output_index":1,"content_index":0,"delta":" ğüşİ 🌍"}
-
-event: response.output_text.done
-data: {"type":"response.output_text.done","text":"Merhaba ğüşİ 🌍"}
-
-event: response.completed
-data: {"type":"response.completed","response":{"id":"resp_fixture","status":"completed"}}
-
-"""
 
 private final class XAIURLProtocol: URLProtocol {
     static var handler: ((URLRequest) throws -> (Int, String))?
