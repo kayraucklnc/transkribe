@@ -5,6 +5,7 @@ public enum AIProviderKind: String, Codable, Sendable, CaseIterable {
     case appleIntelligence
     case claudeCode
     case anthropicAPI
+    case xai
 }
 
 /// A model offered by a provider. `id` is what the provider sends over the wire.

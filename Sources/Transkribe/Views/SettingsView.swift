@@ -205,6 +205,9 @@ private struct AISettingsTab: View {
     @Environment(AppModel.self) private var model
     @State private var apiKey = ""
     @State private var saved = false
+    @State private var xaiKey = ""
+    @State private var xaiKeySaved = false
+    @State private var xaiKeyError: String?
     private let keychain = KeychainStore()
 
     var body: some View {
@@ -254,6 +257,42 @@ private struct AISettingsTab: View {
                 Text("Anthropic API key (optional)")
             } footer: {
                 Text("Only needed if you don't use Claude Code. Stored in your Keychain.")
+            }
+            SwiftUI.Section {
+                SecureField("xai-…", text: $xaiKey)
+                    .accessibilityLabel("xAI API key")
+                HStack {
+                    Button("Save xAI Key") {
+                        do {
+                            try keychain.set(xaiKey.trimmingCharacters(in: .whitespacesAndNewlines), account: XAIProvider.keychainAccount)
+                            xaiKey = ""
+                            xaiKeySaved = true
+                            xaiKeyError = nil
+                            Task { await ai.refreshAvailability() }
+                        } catch {
+                            xaiKeySaved = false
+                            xaiKeyError = error.localizedDescription
+                        }
+                    }
+                    .disabled(xaiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Remove xAI Key", role: .destructive) {
+                        do {
+                            try keychain.delete(account: XAIProvider.keychainAccount)
+                            xaiKey = ""
+                            xaiKeySaved = false
+                            xaiKeyError = nil
+                            Task { await ai.refreshAvailability() }
+                        } catch {
+                            xaiKeyError = error.localizedDescription
+                        }
+                    }
+                    if xaiKeySaved { Text("Saved to Keychain").foregroundStyle(.secondary) }
+                }
+                if let xaiKeyError { Text(xaiKeyError).foregroundStyle(.red) }
+            } header: {
+                Text("xAI API key (optional)")
+            } footer: {
+                Text("Selecting Grok sends the transcript and questions to xAI. Grok can search the web and X. Transkribe stores the key in Keychain.")
             }
         }
         .formStyle(.grouped)

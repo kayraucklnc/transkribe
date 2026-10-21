@@ -30,7 +30,7 @@ final class AIService {
 
     init(model: AppModel) {
         self.model = model
-        providers = [ClaudeCodeProvider(), AppleIntelligenceProvider(), AnthropicAPIProvider()]
+        providers = [ClaudeCodeProvider(), AppleIntelligenceProvider(), AnthropicAPIProvider(), XAIProvider()]
         let saved = UserDefaults.standard.data(forKey: Self.selectionKey).flatMap { try? JSONDecoder().decode(AIModel.self, from: $0) }
         selectedModel = saved ?? ClaudeCodeProvider.sonnet
         Task { await refreshAvailability() }
@@ -51,7 +51,8 @@ final class AIService {
             availability[provider.kind] = await provider.availability()
         }
         // Prefer a model that actually works over a remembered one that doesn't.
-        if !isAvailable(selectedModel), let working = allModels.first(where: isAvailable) {
+        if !isAvailable(selectedModel),
+           let working = AIModelSelection.automaticFallback(models: allModels, availability: availability) {
             selectedModel = working
         }
     }
