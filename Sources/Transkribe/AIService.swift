@@ -33,6 +33,7 @@ final class AIService {
         providers = [ClaudeCodeProvider(), AppleIntelligenceProvider(), AnthropicAPIProvider(), XAIProvider()]
         let saved = UserDefaults.standard.data(forKey: Self.selectionKey).flatMap { try? JSONDecoder().decode(AIModel.self, from: $0) }
         selectedModel = saved ?? ClaudeCodeProvider.sonnet
+        model.intentAI = self
         Task { await refreshAvailability() }
     }
 

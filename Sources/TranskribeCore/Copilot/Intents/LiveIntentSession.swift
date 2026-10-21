@@ -44,23 +44,6 @@ public actor LiveIntentSession {
         self.engine = IntentEngine(config: config, provider: provider, model: model)
     }
 
-    public func receive(track: String, committed: [Segment], at now: Date = Date()) {
-        for segment in committed {
-            let key = RangeKey(track: track, from: segment.start, to: segment.end)
-            if committedAt[key] == nil {
-                committedAt[key] = now
-                hasNewSpeech = true
-                wordCount += segment.text.split(whereSeparator: \.isWhitespace).count
-            }
-        }
-        tracks[track] = committed
-    }
-
-    public func mute(_ intentID: String) async {
-        mutedIntents.insert(intentID)
-        await engine.mute(intentID, meetingID: meetingID)
-    }
-
     public func evaluate(enabled: Bool, meIsReliable: Bool, at now: Date = Date(), force: Bool = false) async throws -> IntentDispatch? {
         guard enabled, hasNewSpeech, !evaluating else { return nil }
         guard force || scheduler.shouldEvaluate(committedWordCount: wordCount, at: now) else { return nil }
@@ -78,4 +61,21 @@ public actor LiveIntentSession {
         return IntentDispatch(meetingID: meetingID, match: match, context: segments, meetingStartedAt: startedAt,
                               committedAt: commit, verdictAt: Date())
     }
+    public func receive(track: String, committed: [Segment], at now: Date = Date()) {
+        for segment in committed {
+            let key = RangeKey(track: track, from: segment.start, to: segment.end)
+            if committedAt[key] == nil {
+                committedAt[key] = now
+                hasNewSpeech = true
+                wordCount += segment.text.split(whereSeparator: \.isWhitespace).count
+            }
+        }
+        tracks[track] = committed
+    }
+
+    public func mute(_ intentID: String) async {
+        mutedIntents.insert(intentID)
+        await engine.mute(intentID, meetingID: meetingID)
+    }
+
 }
