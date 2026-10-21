@@ -31,20 +31,29 @@ public actor IntentEngine {
         let text: String
     }
 
+    private struct MeetingState {
+        var lastRunByIntent: [String: Date] = [:]
+        var ranges: [Range<TimeInterval>] = []
+    }
+
     private let config: IntentConfig
     private let provider: any AIProvider
     private let model: AIModel
+    private let maxRunsPerMeeting: Int
+    private var meetings: [UUID: MeetingState] = [:]
 
-    public init(config: IntentConfig, provider: any AIProvider, model: AIModel) {
+    public init(config: IntentConfig, provider: any AIProvider, model: AIModel, maxRunsPerMeeting: Int = 5) {
         self.config = config
         self.provider = provider
         self.model = model
+        self.maxRunsPerMeeting = max(0, maxRunsPerMeeting)
     }
 
     /// A nil result means none. Provider errors propagate to the caller.
     public func evaluate(meetingID: UUID, committedSegments: [Segment], meIsReliable: Bool,
                          at now: Date = Date()) async throws -> IntentMatch? {
-        guard !config.intents.isEmpty, !committedSegments.isEmpty else { return nil }
+        guard !config.intents.isEmpty, !committedSegments.isEmpty,
+              (meetings[meetingID]?.ranges.count ?? 0) < maxRunsPerMeeting else { return nil }
         let lines = committedSegments.map { Line(from: $0.start, to: $0.end, speaker: $0.speaker, text: $0.text) }
         let message = AIMessage(role: .user, text: try json(["transcript": lines]))
         var response = ""
@@ -54,7 +63,29 @@ public actor IntentEngine {
         guard let verdict = try? JSONDecoder().decode(Verdict.self, from: Data(response.utf8)),
               let intent = config.intents.first(where: { $0.id == verdict.intent }),
               verdict.confidence.isFinite, (0...1).contains(verdict.confidence),
-              verdict.confidence >= intent.minConfidence else { return nil }
+              verdict.confidence >= intent.minConfidence,
+              verdict.from.isFinite, verdict.to.isFinite,
+              verdict.from >= 0, verdict.to > verdict.from,
+              !verdict.request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let firstTime = committedSegments.map(\.start).min(),
+              let lastTime = committedSegments.map(\.end).max(),
+              verdict.from >= firstTime, verdict.to <= lastTime else { return nil }
+        let matchedSegments = committedSegments.filter { $0.start < verdict.to && $0.end > verdict.from }
+        guard !matchedSegments.isEmpty else { return nil }
+        if intent.speakers == .me {
+            guard meIsReliable, matchedSegments.allSatisfy({ $0.speaker == SpeakerID.me }) else { return nil }
+        }
+        // Read the state after the model returns. Another evaluation can finish during the await.
+        var state = meetings[meetingID] ?? MeetingState()
+        if let lastRun = state.lastRunByIntent[intent.id], now.timeIntervalSince(lastRun) < intent.cooldownSec {
+            return nil
+        }
+        let range = verdict.from..<verdict.to
+        guard state.ranges.count < maxRunsPerMeeting,
+              !state.ranges.contains(where: { $0.overlaps(range) }) else { return nil }
+        state.ranges.append(range)
+        state.lastRunByIntent[intent.id] = now
+        meetings[meetingID] = state
         return IntentMatch(intent: intent, confidence: verdict.confidence, from: verdict.from,
                            to: verdict.to, request: verdict.request)
     }

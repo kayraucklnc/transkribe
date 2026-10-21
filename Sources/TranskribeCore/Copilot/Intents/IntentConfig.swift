@@ -54,7 +54,7 @@ public struct IntentConfig: Codable, Equatable, Sendable {
             try config.validate()
             return LoadResult(config: config, error: nil)
         } catch {
-            return LoadResult(config: Self(), error: "Cannot load intents.json: \(error.localizedDescription)")
+            return LoadResult(config: Self(), error: "Transkribe cannot load intents.json: \(error.localizedDescription)")
         }
     }
 
