@@ -3,6 +3,17 @@ import Testing
 @testable import TranskribeCore
 
 @Suite struct CopilotSettingsTests {
+    @Test func intentsDefaultOffAndEnableLiveInsights() throws {
+        let old = try JSONDecoder().decode(CopilotSettings.self, from: Data("{}".utf8))
+        #expect(!old.intents)
+        let settings = CopilotSettings(intents: true)
+        #expect(settings.showsInsights(isLive: true))
+        #expect(!settings.canAsk(status: .transcribing, isLive: true))
+        let defaults = Fixtures.temporaryDefaults()
+        settings.save(to: defaults)
+        #expect(CopilotSettings.load(from: defaults) == settings)
+    }
+
     @Test func decisionModelDefaultsToHaikuAndPersistsIndependently() throws {
         let old = try JSONDecoder().decode(CopilotSettings.self,
             from: Data(#"{"fastLiveWindow":true}"#.utf8))
@@ -49,7 +60,7 @@ import Testing
         let data = try #require(defaults.data(forKey: "copilotSettings"))
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["webhook"] as? String == "https://webhook.example/events")
-        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "webhook", "decisionModel"])
+        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "webhook", "decisionModel", "intents"])
     }
 
     @Test func mcpSettingsPersistWithoutSecretsAndDecodeOldData() throws {
@@ -60,7 +71,7 @@ import Testing
         let settings = CopilotSettings(mcpServer: true, mcpPort: 8899, mcpReadScopeDays: 3)
         let data = try JSONEncoder().encode(settings)
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "decisionModel"])
+        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "decisionModel", "intents"])
         #expect(!String(decoding: data, as: UTF8.self).lowercased().contains("token"))
         #expect(try JSONDecoder().decode(CopilotSettings.self, from: data) == settings)
     }
