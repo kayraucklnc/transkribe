@@ -7,6 +7,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
     public var mcpPort: UInt16
     public var mcpReadScopeDays: Int
     public var webhook: URL?
+    public var decisionModel: AIModel
 
     public static let `default` = CopilotSettings()
     private static let key = "copilotSettings"
@@ -18,16 +19,19 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         case mcpPort
         case mcpReadScopeDays
         case webhook
+        case decisionModel
     }
 
     public init(fastLiveWindow: Bool = false, askWhileLive: Bool = false, mcpServer: Bool = false,
-                mcpPort: UInt16 = 7788, mcpReadScopeDays: Int = 7, webhook: URL? = nil) {
+                mcpPort: UInt16 = 7788, mcpReadScopeDays: Int = 7, webhook: URL? = nil,
+                decisionModel: AIModel = AnthropicAPIProvider.haiku) {
         self.fastLiveWindow = fastLiveWindow
         self.askWhileLive = askWhileLive
         self.mcpServer = mcpServer
         self.mcpPort = mcpPort
         self.mcpReadScopeDays = mcpReadScopeDays
         self.webhook = webhook
+        self.decisionModel = decisionModel
     }
 
     public init(from decoder: Decoder) throws {
@@ -38,6 +42,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         mcpPort = try values.decodeIfPresent(UInt16.self, forKey: .mcpPort) ?? 7788
         mcpReadScopeDays = try values.decodeIfPresent(Int.self, forKey: .mcpReadScopeDays) ?? 7
         webhook = try values.decodeIfPresent(URL.self, forKey: .webhook)
+        decisionModel = try values.decodeIfPresent(AIModel.self, forKey: .decisionModel) ?? AnthropicAPIProvider.haiku
     }
 
     public static func load(from defaults: UserDefaults = .standard) -> CopilotSettings {
