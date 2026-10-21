@@ -3,6 +3,33 @@ import Testing
 @testable import TranskribeCore
 
 @Suite struct MCPLiveToolsTests {
+    @Test func clearedAnswersCannotReturnThroughLaterToolCalls() throws {
+        let cleared = Transcript(title: "Cleared meeting", tracks: [], status: .transcribing)
+        let other = Transcript(title: "Other meeting", tracks: [], status: .transcribing)
+        let live = MCPLiveTools(snapshots: {
+            [.init(transcript: cleared, isLive: true), .init(transcript: other, isLive: true)]
+        })
+        let server = MCPServer(library: { ConversationLibrary(transcripts: [], people: []) }, extraTools: live.tools)
+        let draft = try live.answerStore.post(conversationId: cleared.id, markdown: "Draft")
+        let final = try live.answerStore.post(conversationId: cleared.id, markdown: "Final")
+        _ = try live.answerStore.update(answerId: final.id, markdown: "Final", final: true)
+        let retained = try live.answerStore.post(conversationId: other.id, markdown: "Keep this")
+
+        live.answerStore.clear(conversationId: cleared.id)
+        live.answerStore.clear(conversationId: cleared.id)
+        for answer in [draft, final] {
+            let result = try rpcCall(server, "update_answer", ["answerId": answer.id.uuidString,
+                "markdown": "Late update", "final": false])
+            #expect(result.isError)
+            #expect(result.text == "The answer ID is unknown.")
+        }
+        #expect(!server.call("read_conversation", arguments: ["id": cleared.id.uuidString]).isError)
+        #expect(live.answerStore.answers(for: cleared.id).isEmpty)
+        #expect(live.answerStore.answers(for: other.id) == [retained])
+        let newAnswer = try live.answerStore.post(conversationId: cleared.id, markdown: "New answer")
+        #expect(live.answerStore.answers(for: cleared.id) == [newAnswer])
+    }
+
     @Test(arguments: [101, Int.max])
     func conversationToolsClampLargeLimits(limit: Int) throws {
         let transcripts = (0..<101).map { index in
