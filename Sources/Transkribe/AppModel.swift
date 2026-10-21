@@ -76,6 +76,7 @@ final class AppModel {
         }
     }
     var copilotSettingsChanged: (() -> Void)?
+    var agentAnswerStore: AnswerStore?
     var enhanceTask: Task<Void, Never>?
     var people: [Person] = []
     let peopleStore = PeopleStore()

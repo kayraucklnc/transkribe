@@ -14,7 +14,6 @@ final class MCPServerController {
     private var handler: MCPHTTPHandler?
     private let keychain: KeychainStore
     private var tools: MCPLiveTools?
-    private var answerStore: AnswerStore?
 
     init(model: AppModel, keychain: KeychainStore = KeychainStore()) {
         self.model = model
@@ -34,9 +33,9 @@ final class MCPServerController {
             let settings = model.copilotSettings
             let tools = MCPLiveTools(snapshots: { [weak self] in
                 MainActor.assumeIsolated { self?.snapshots() ?? [] }
-            }, readScopeDays: settings.mcpReadScopeDays, answerStore: answerStore)
+            }, readScopeDays: settings.mcpReadScopeDays, answerStore: model.agentAnswerStore)
             self.tools = tools
-            answerStore = tools.answerStore
+            model.agentAnswerStore = tools.answerStore
             let server = MCPServer(library: { [weak model] in
                 MainActor.assumeIsolated {
                     ConversationLibrary(transcripts: model?.transcripts ?? [], people: model?.people ?? [])

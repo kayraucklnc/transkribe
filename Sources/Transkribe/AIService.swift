@@ -189,6 +189,7 @@ final class AIService {
 
     func clearChat(_ id: Transcript.ID) {
         cancelAnswer(id)
+        model?.agentAnswerStore?.clear(conversationId: id)
         model?.update(id, persist: true) { $0.chat = nil }
     }
 
