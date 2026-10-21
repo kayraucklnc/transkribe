@@ -202,13 +202,22 @@ private struct Section<Content: View>: View {
 
 private struct AISettingsTab: View {
     @Environment(AIService.self) private var ai
+    @Environment(AppModel.self) private var model
     @State private var apiKey = ""
     @State private var saved = false
     private let keychain = KeychainStore()
 
     var body: some View {
         @Bindable var ai = ai
+        @Bindable var model = model
         Form {
+            SwiftUI.Section {
+                Toggle("Ask while recording", isOn: $model.copilotSettings.askWhileLive)
+            } header: {
+                Text("Live questions")
+            } footer: {
+                Text("Answers use the transcript so far and the selected model. This option is off by default.")
+            }
             SwiftUI.Section("AI model") {
                 Picker("Default model", selection: $ai.selectedModel) {
                     ForEach(ai.allModels) { model in

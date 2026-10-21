@@ -4,6 +4,7 @@ import TranskribeCore
 /// Summary and questions about the open conversation, using the model the user picked.
 struct InsightsPanel: View {
     let transcript: Transcript
+    var isLive = false
     @AppStorage("insightsTab") private var tab = Tab.summary
     @Namespace private var tabSelection
 
@@ -24,10 +25,15 @@ struct InsightsPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                // Narrow panels show only the open tab's name; the others keep their icon.
-                ViewThatFits(in: .horizontal) {
-                    tabs(compact: false)
-                    tabs(compact: true)
+                if isLive {
+                    Label(Tab.ask.rawValue, systemImage: Tab.ask.symbol)
+                        .font(.callout.weight(.semibold))
+                } else {
+                    // Narrow panels show only the open tab's name; the others keep their icon.
+                    ViewThatFits(in: .horizontal) {
+                        tabs(compact: false)
+                        tabs(compact: true)
+                    }
                 }
                 Spacer()
                 ModelPicker()
@@ -35,7 +41,7 @@ struct InsightsPanel: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             Group {
-                switch tab {
+                switch isLive ? .ask : tab {
                 case .summary: SummaryTab(transcript: transcript)
                 case .todos: ActionItemsTab(transcript: transcript)
                 case .ask: AskTab(transcript: transcript)
@@ -347,8 +353,14 @@ private struct SummarizeHero: View {
 private struct AskTab: View {
     let transcript: Transcript
     @Environment(AIService.self) private var ai
+    @Environment(AppModel.self) private var model
     @State private var question = ""
     @FocusState private var focused: Bool
+
+    private var canSend: Bool {
+        model.copilotSettings.canAsk(status: transcript.status, isLive: model.liveRecordingID == transcript.id)
+            && !transcript.segments.isEmpty && ai.isAvailable(ai.selectedModel) && !ai.isAnswering(transcript.id)
+    }
 
     var body: some View {
         let messages = transcript.chat?.messages ?? []
@@ -359,6 +371,7 @@ private struct AskTab: View {
                     VStack(alignment: .leading, spacing: 12) {
                         if messages.isEmpty, draft == nil {
                             Suggestions(transcript: transcript) { send($0) }
+                                .disabled(!canSend)
                         }
                         ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
                             ChatMessageView(message: message)
@@ -380,7 +393,7 @@ private struct AskTab: View {
                 .onChange(of: messages.count) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
             Composer(question: $question, focused: $focused, isAnswering: draft != nil && draft?.error == nil,
-                     onSend: { send(question) }, onStop: { ai.cancelAnswer(transcript.id) })
+                     onSend: { send(question) }, onStop: { ai.cancelAnswer(transcript.id) }, canSend: canSend)
                 .padding(12)
         }
         .contextMenu {
@@ -390,8 +403,7 @@ private struct AskTab: View {
     }
 
     private func send(_ text: String) {
-        guard transcript.status == .done, ai.isAvailable(ai.selectedModel),
-              !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard canSend, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         ai.ask(text, about: transcript)
         question = ""
     }
@@ -458,6 +470,7 @@ struct Composer: View {
     let isAnswering: Bool
     let onSend: () -> Void
     let onStop: () -> Void
+    var canSend = true
     var placeholder = "Ask about this conversation…"
 
     var body: some View {
@@ -466,7 +479,10 @@ struct Composer: View {
                 .textFieldStyle(.plain)
                 .lineLimit(1...4)
                 .focused(focused)
-                .onSubmit(onSend)
+                .onSubmit {
+                    guard canSend, !isAnswering else { return }
+                    onSend()
+                }
                 .padding(.vertical, 6)
             if isAnswering {
                 Button(action: onStop) {
@@ -487,7 +503,7 @@ struct Composer: View {
                         .background(question.isEmpty ? AnyShapeStyle(Color.secondary.opacity(0.4)) : AnyShapeStyle(Theme.myBubble), in: Circle())
                 }
                 .buttonStyle(.plain)
-                .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(!canSend || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(.leading, 16)

@@ -28,6 +28,8 @@ Before recording, enable **Faster live text (uses more CPU)** in Settings → Tr
 
 **Summaries, to-dos and answers.** One click writes a summary in the conversation's language: key points, decisions, action items with owners, and open questions, each linked to the moment it was said. Pull out to-dos and send them to Reminders, or ask questions about one conversation or your whole library.
 
+Enable **Ask while recording** in Settings → AI to ask questions during a recording. Answers use the transcript so far and the selected model. This option is off by default. During recording, only the Ask tab is available. Wait for the answer or stop it before you send another question.
+
 <table>
   <tr>
     <td><img src="docs/screenshots/todos.png" alt="To-dos found in a conversation"></td>
