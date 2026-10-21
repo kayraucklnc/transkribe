@@ -67,8 +67,15 @@ final class AppModel {
         }
     }
     var copilotSettings: CopilotSettings {
-        didSet { copilotSettings.save() }
+        didSet {
+            copilotSettings.save()
+            if oldValue.mcpServer != copilotSettings.mcpServer || oldValue.mcpPort != copilotSettings.mcpPort
+                || oldValue.mcpReadScopeDays != copilotSettings.mcpReadScopeDays {
+                copilotSettingsChanged?()
+            }
+        }
     }
+    var copilotSettingsChanged: (() -> Void)?
     var enhanceTask: Task<Void, Never>?
     var people: [Person] = []
     let peopleStore = PeopleStore()

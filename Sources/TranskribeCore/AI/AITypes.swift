@@ -28,12 +28,27 @@ public struct AIMessage: Codable, Hashable, Sendable {
         case assistant
     }
 
+    public enum Origin: String, Codable, Sendable {
+        case typed
+        case agent
+        case intent
+    }
+
     public var role: Role
     public var text: String
+    public var origin: Origin?
+    public var answerId: UUID?
+    public var isFinal: Bool?
+    public var agentTimings: AgentAnswerTimings?
 
-    public init(role: Role, text: String) {
+    public init(role: Role, text: String, origin: Origin? = nil, answerId: UUID? = nil,
+                isFinal: Bool? = nil, agentTimings: AgentAnswerTimings? = nil) {
         self.role = role
         self.text = text
+        self.origin = origin
+        self.answerId = answerId
+        self.isFinal = isFinal
+        self.agentTimings = agentTimings
     }
 }
 

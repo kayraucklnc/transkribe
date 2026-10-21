@@ -5,6 +5,7 @@ import TranskribeCore
 struct InsightsPanel: View {
     let transcript: Transcript
     var isLive = false
+    @Environment(AppModel.self) private var model
     @AppStorage("insightsTab") private var tab = Tab.summary
     @Namespace private var tabSelection
 
@@ -36,7 +37,7 @@ struct InsightsPanel: View {
                     }
                 }
                 Spacer()
-                ModelPicker()
+                if !isLive || model.copilotSettings.askWhileLive { ModelPicker() }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -360,6 +361,10 @@ private struct AskTab: View {
     @State private var question = ""
     @FocusState private var focused: Bool
 
+    private var allowsTyping: Bool {
+        model.liveRecordingID != transcript.id || model.copilotSettings.askWhileLive
+    }
+
     private var canSend: Bool {
         model.copilotSettings.canAsk(status: transcript.status, isLive: model.liveRecordingID == transcript.id)
             && !transcript.segments.isEmpty && ai.isAvailable(ai.selectedModel) && !ai.isAnswering(transcript.id)
@@ -373,8 +378,12 @@ private struct AskTab: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         if messages.isEmpty, draft == nil {
-                            Suggestions(transcript: transcript) { send($0) }
-                                .disabled(!canSend)
+                            if allowsTyping {
+                                Suggestions(transcript: transcript) { send($0) }.disabled(!canSend)
+                            } else {
+                                Text("Agent answers will appear here.")
+                                    .font(.callout).foregroundStyle(.secondary)
+                            }
                         }
                         ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
                             ChatMessageView(message: message)
@@ -393,11 +402,13 @@ private struct AskTab: View {
                     .padding(16)
                 }
                 .onChange(of: draft?.text) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
-                .onChange(of: messages.count) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+                .onChange(of: messages.last) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
-            Composer(question: $question, focused: $focused, isAnswering: draft != nil && draft?.error == nil,
-                     onSend: { send(question) }, onStop: { ai.cancelAnswer(transcript.id) }, canSend: canSend)
-                .padding(12)
+            if allowsTyping {
+                Composer(question: $question, focused: $focused, isAnswering: draft != nil && draft?.error == nil,
+                         onSend: { send(question) }, onStop: { ai.cancelAnswer(transcript.id) }, canSend: canSend)
+                    .padding(12)
+            }
         }
         .contextMenu {
             Button("Clear Conversation") { ai.clearChat(transcript.id) }
@@ -425,6 +436,8 @@ private struct ChatMessageView: View {
                 .background(Theme.myBubble, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.leading, 40)
+        } else if message.origin == .agent {
+            AgentAnswerView(message: message)
         } else {
             AssistantBubble { MarkdownView(markdown: message.text) }
         }

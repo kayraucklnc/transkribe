@@ -3,6 +3,30 @@ import Testing
 @testable import TranskribeCore
 
 @Suite struct AnswerStoreTests {
+    @Test func agentMessagePreservesTimingAndFinalState() throws {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        var time = start
+        let transcript = Transcript(title: "Live", tracks: [], status: .transcribing)
+        let tools = MCPLiveTools(snapshots: { [.init(transcript: transcript, isLive: true)] }, now: { time })
+        tools.answerStore.markSent(conversationId: transcript.id)
+        time = start.addingTimeInterval(3)
+        let server = MCPServer(library: { ConversationLibrary(transcripts: [], people: []) }, extraTools: tools.tools)
+        #expect(!server.call("read_conversation", arguments: ["id": transcript.id.uuidString]).isError)
+        time = start.addingTimeInterval(5)
+        let answer = try tools.answerStore.post(conversationId: transcript.id, markdown: "First")
+        #expect(answer.chatMessage.agentTimings?.sentAt == start)
+        #expect(answer.chatMessage.agentTimings?.firstReadAt == start.addingTimeInterval(3))
+        #expect(answer.chatMessage.agentTimings?.firstTakeAt == start.addingTimeInterval(5))
+        #expect(answer.chatMessage.isFinal == false)
+        time = start.addingTimeInterval(12)
+        let final = try tools.answerStore.update(answerId: answer.id, markdown: "Final", final: true).chatMessage
+        #expect(final.isFinal == true)
+        #expect(final.origin == .agent)
+        #expect(final.answerId == answer.id)
+        #expect(final.agentTimings?.finalAt == time)
+        #expect(try JSONDecoder().decode(AIMessage.self, from: JSONEncoder().encode(final)) == final)
+    }
+
     @Test func postAndUpdateReplaceAnswerText() throws {
         let transcript = Transcript(title: "Live", tracks: [], status: .transcribing)
         let store = AnswerStore(snapshots: { [.init(transcript: transcript, isLive: true)] })

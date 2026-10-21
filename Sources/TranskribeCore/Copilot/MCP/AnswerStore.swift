@@ -20,6 +20,20 @@ public enum AnswerStoreError: Error, Equatable, LocalizedError {
     }
 }
 
+public struct AgentAnswerTimings: Codable, Hashable, Sendable {
+    public var sentAt: Date?
+    public var firstReadAt: Date?
+    public var firstTakeAt: Date?
+    public var finalAt: Date?
+
+    public init(sentAt: Date? = nil, firstReadAt: Date? = nil, firstTakeAt: Date? = nil, finalAt: Date? = nil) {
+        self.sentAt = sentAt
+        self.firstReadAt = firstReadAt
+        self.firstTakeAt = firstTakeAt
+        self.finalAt = finalAt
+    }
+}
+
 public struct AgentAnswer: Equatable, Identifiable, Sendable {
     public let id: UUID
     public let conversationId: UUID
@@ -27,6 +41,14 @@ public struct AgentAnswer: Equatable, Identifiable, Sendable {
     public var isFinal: Bool
     public let createdAt: Date
     public var updatedAt: Date
+    public var sentAt: Date? = nil
+    public var firstReadAt: Date? = nil
+
+    public var chatMessage: AIMessage {
+        AIMessage(role: .assistant, text: markdown, origin: .agent, answerId: id, isFinal: isFinal,
+            agentTimings: AgentAnswerTimings(sentAt: sentAt, firstReadAt: firstReadAt,
+                firstTakeAt: createdAt, finalAt: isFinal ? updatedAt : nil))
+    }
 }
 
 /// Stores agent answers in memory. All answer access uses the same lock.
@@ -36,6 +58,8 @@ public final class AnswerStore: @unchecked Sendable {
     private let snapshots: () -> [MCPConversationSnapshot]
     private let now: () -> Date
     private var stored: [UUID: AgentAnswer] = [:]
+    private var sentTimes: [UUID: Date] = [:]
+    private var readTimes: [UUID: Date] = [:]
     private var updateTimes: [UUID: [Date]] = [:]
 
     public init(snapshots: @escaping () -> [MCPConversationSnapshot], now: @escaping () -> Date = Date.init) {
@@ -50,7 +74,8 @@ public final class AnswerStore: @unchecked Sendable {
         defer { lock.unlock() }
         try validate(conversationId: conversationId, markdown: markdown, snapshots: conversations, at: time)
         let answer = AgentAnswer(id: UUID(), conversationId: conversationId, markdown: markdown,
-                                 isFinal: false, createdAt: time, updatedAt: time)
+                                 isFinal: false, createdAt: time, updatedAt: time,
+                                 sentAt: sentTimes[conversationId], firstReadAt: readTimes[conversationId])
         stored[answer.id] = answer
         return answer
     }
@@ -71,6 +96,26 @@ public final class AnswerStore: @unchecked Sendable {
         answer.updatedAt = time
         stored[answerId] = answer
         return answer
+    }
+
+    public func markSent(conversationId: UUID) {
+        let time = now()
+        lock.lock()
+        defer { lock.unlock() }
+        sentTimes[conversationId] = time
+        readTimes[conversationId] = nil
+    }
+
+    public func recordRead(conversationId: UUID) {
+        let time = now()
+        lock.lock()
+        defer { lock.unlock() }
+        if readTimes[conversationId] == nil { readTimes[conversationId] = time }
+        for id in Array(stored.keys) where stored[id]?.conversationId == conversationId {
+            if stored[id]?.firstReadAt == nil && stored[id]?.isFinal == false {
+                stored[id]?.firstReadAt = time
+            }
+        }
     }
 
     public func answers(for conversationId: UUID) -> [AgentAnswer] {
