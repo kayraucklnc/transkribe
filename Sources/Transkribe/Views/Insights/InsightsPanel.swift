@@ -149,6 +149,7 @@ struct ModelPicker: View {
     static func shortName(_ model: AIModel) -> String {
         switch model.provider {
         case .appleIntelligence: "On-device"
+        case .xai: model.displayName
         case .claudeCode, .anthropicAPI:
             model.displayName
                 .replacingOccurrences(of: " (Claude Code)", with: "")
@@ -161,6 +162,7 @@ struct ModelPicker: View {
         case .claudeCode: "Claude · your Claude Code login"
         case .appleIntelligence: "On this Mac · private"
         case .anthropicAPI: "Claude · API key"
+        case .xai: "Grok · xAI API key"
         }
     }
 
@@ -169,6 +171,7 @@ struct ModelPicker: View {
         case .claudeCode: "terminal"
         case .appleIntelligence: "apple.intelligence"
         case .anthropicAPI: "key"
+        case .xai: "globe"
         }
     }
 }
