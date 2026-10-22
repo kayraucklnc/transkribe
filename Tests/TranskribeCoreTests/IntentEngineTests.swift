@@ -6,6 +6,26 @@ import Testing
     let model = AIModel(provider: .claudeCode, id: "fake", displayName: "Fake")
     let start = Date(timeIntervalSince1970: 0)
 
+    @Test(arguments: [false, true])
+    func disabledIntentsNeverReachTheModelOrMatch(_ includeEnabledIntent: Bool) async throws {
+        let provider = FakeAIProvider(budget: 100_000) { _ in
+            #"{"intent":"explicit_ask","confidence":0.95,"from":10,"to":14,"request":"check Otter"}"#
+        }
+        var intents = [intent(enabled: false)]
+        if includeEnabledIntent { intents.append(intent(id: "other_intent")) }
+        let engine = IntentEngine(config: IntentConfig(intents: intents), provider: provider, model: model)
+        let result = try await engine.evaluate(meetingID: UUID(), committedSegments: speech(from: 10, to: 14),
+                                              meIsReliable: true, at: start)
+        #expect(result == nil)
+        if includeEnabledIntent {
+            let call = try #require(provider.calls.first)
+            #expect(call.system.contains("other_intent"))
+            #expect(!call.system.contains("explicit_ask"))
+        } else {
+            #expect(provider.calls.isEmpty)
+        }
+    }
+
     @Test func misheardRequestReachesTheModelUnchanged() async throws {
         let heard = "Grandpa, please check my daughter launch"
         let provider = FakeAIProvider(budget: 100_000) { _ in
@@ -291,10 +311,11 @@ import Testing
 
     private func intent(id: String = "explicit_ask", speakers: IntentDefinition.Speakers = .me,
                         minConfidence: Double = 0.8, cooldownSec: TimeInterval = 0,
-                        destination: IntentDefinition.Action.Destination = .webhook) -> IntentDefinition {
+                        destination: IntentDefinition.Action.Destination = .webhook,
+                        enabled: Bool = true) -> IntentDefinition {
         IntentDefinition(id: id, description: "Grok was asked to do something",
             examples: ["Grok bot, please check what Otter launched", "Grock, check Otter"],
             speakers: speakers, action: .init(destination: destination, instruction: "Research the request."),
-            minConfidence: minConfidence, cooldownSec: cooldownSec)
+            minConfidence: minConfidence, cooldownSec: cooldownSec, enabled: enabled)
     }
 }

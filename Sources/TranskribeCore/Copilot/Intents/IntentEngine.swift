@@ -44,7 +44,7 @@ public actor IntentEngine {
     private var mutedIntents: [UUID: Set<String>] = [:]
 
     public init(config: IntentConfig, provider: any AIProvider, model: AIModel, maxRunsPerMeeting: Int = 5) {
-        self.config = config
+        self.config = IntentConfig(intents: config.intents.filter(\.enabled))
         self.provider = provider
         self.model = model
         self.maxRunsPerMeeting = max(0, maxRunsPerMeeting)

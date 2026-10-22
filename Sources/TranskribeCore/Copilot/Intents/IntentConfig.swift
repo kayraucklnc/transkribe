@@ -13,6 +13,10 @@ public struct IntentDefinition: Codable, Equatable, Sendable, Identifiable {
         }
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case id, description, examples, speakers, action, minConfidence, cooldownSec, enabled
+    }
+
     public let id: String
     public let description: String
     public let examples: [String]
@@ -20,9 +24,10 @@ public struct IntentDefinition: Codable, Equatable, Sendable, Identifiable {
     public let action: Action
     public let minConfidence: Double
     public let cooldownSec: TimeInterval
+    public let enabled: Bool
 
     public init(id: String, description: String, examples: [String], speakers: Speakers,
-                action: Action, minConfidence: Double, cooldownSec: TimeInterval) {
+                action: Action, minConfidence: Double, cooldownSec: TimeInterval, enabled: Bool = true) {
         self.id = id
         self.description = description
         self.examples = examples
@@ -30,6 +35,19 @@ public struct IntentDefinition: Codable, Equatable, Sendable, Identifiable {
         self.action = action
         self.minConfidence = minConfidence
         self.cooldownSec = cooldownSec
+        self.enabled = enabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        description = try values.decode(String.self, forKey: .description)
+        examples = try values.decode([String].self, forKey: .examples)
+        speakers = try values.decode(Speakers.self, forKey: .speakers)
+        action = try values.decode(Action.self, forKey: .action)
+        minConfidence = try values.decode(Double.self, forKey: .minConfidence)
+        cooldownSec = try values.decode(TimeInterval.self, forKey: .cooldownSec)
+        enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
     }
 }
 
@@ -58,7 +76,25 @@ public struct IntentConfig: Codable, Equatable, Sendable {
         }
     }
 
-    private func validate() throws {
+    public func save(to url: URL) throws {
+        try validate()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(self)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+    }
+
+    public static func examples() throws -> IntentConfig {
+        guard let url = Bundle.module.url(forResource: "intents.example", withExtension: "json") else {
+            throw AIError("The bundled example intents are missing.")
+        }
+        let result = load(from: url)
+        if let error = result.error { throw AIError(error) }
+        return result.config
+    }
+
+    public func validate() throws {
         guard version == 1 else { throw AIError("The intents.json version must be 1.") }
         var ids = Set<String>()
         for intent in intents {

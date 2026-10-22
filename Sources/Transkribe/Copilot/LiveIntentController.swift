@@ -39,7 +39,7 @@ final class LiveIntentController {
         self.ai = ai
         decisionModel = model.copilotSettings.decisionModel
         let loaded = IntentConfig.load(from: TranscriptStore.supportDirectory.appendingPathComponent("intents.json"))
-        config = loaded.config
+        config = IntentConfig(intents: loaded.config.intents.filter(\.enabled))
         notice = loaded.error
     }
 
@@ -82,6 +82,12 @@ final class LiveIntentController {
         for index in cards.indices where cards[index].intentID == intentID {
             cards[index].status = "Muted for this meeting"
         }
+    }
+
+    func clearChat() {
+        evaluation?.cancel()
+        for task in actions.values { task.cancel() }
+        cards.removeAll()
     }
 
     func dismiss(_ id: UUID) {
