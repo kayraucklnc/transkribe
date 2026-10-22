@@ -62,7 +62,7 @@ final class AIService {
     func decisionProvider() async -> (any AIProvider)? {
         guard let appModel = model else { return nil }
         let chosen = appModel.copilotSettings.decisionModel
-        if let candidate = provider(for: chosen) {
+        if let candidate = providers.first(where: { $0.kind == chosen.provider }) {
             let current = await candidate.availability()
             guard appModel.copilotSettings.decisionModel == chosen else { return nil }
             availability[chosen.provider] = current

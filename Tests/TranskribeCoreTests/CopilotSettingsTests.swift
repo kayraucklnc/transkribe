@@ -17,19 +17,32 @@ import Testing
     @Test func decisionModelDefaultsToHaikuAndPersistsIndependently() throws {
         let old = try JSONDecoder().decode(CopilotSettings.self,
             from: Data(#"{"fastLiveWindow":true}"#.utf8))
-        #expect(old.decisionModel == AnthropicAPIProvider.haiku)
+        #expect(old.decisionModel == .haiku)
         #expect(old.fastLiveWindow)
         let null = try JSONDecoder().decode(CopilotSettings.self,
             from: Data(#"{"decisionModel":null}"#.utf8))
-        #expect(null.decisionModel == AnthropicAPIProvider.haiku)
+        #expect(null.decisionModel == .haiku)
 
         let defaults = Fixtures.temporaryDefaults()
         var settings = old
-        settings.decisionModel = AppleIntelligenceProvider.model
+        settings.decisionModel = .openRouter(.jev)
         settings.save(to: defaults)
-        #expect(CopilotSettings.load(from: defaults).decisionModel == AppleIntelligenceProvider.model)
+        #expect(CopilotSettings.load(from: defaults).decisionModel == .openRouter(.jev))
         #expect(CopilotSettings.load(from: defaults).fastLiveWindow)
         #expect(!CopilotSettings.load(from: defaults).askWhileLive)
+    }
+
+    @Test(arguments: [AppleIntelligenceProvider.model, ClaudeCodeProvider.haiku,
+                      AnthropicAPIProvider.sonnet, XAIProvider.grok])
+    func legacyDecisionSelectionsMigrateToHaiku(_ model: AIModel) throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "decisionModel": JSONSerialization.jsonObject(with: JSONEncoder().encode(model)),
+            "fastLiveWindow": true, "intents": true,
+        ])
+        let settings = try JSONDecoder().decode(CopilotSettings.self, from: data)
+        #expect(settings.decisionModel == .haiku)
+        #expect(settings.fastLiveWindow)
+        #expect(settings.intents)
     }
 
     @Test(arguments: ["{}", #"{"retiredFlag":true}"#, #"{"fastLiveWindow":null,"futureFlag":true}"#])

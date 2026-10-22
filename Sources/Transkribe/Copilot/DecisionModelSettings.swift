@@ -10,7 +10,7 @@ struct DecisionModelSettings: View {
         SwiftUI.Section {
             Toggle("Spoken intents", isOn: $model.copilotSettings.intents)
             Picker("Decision model", selection: $model.copilotSettings.decisionModel) {
-                ForEach(ai.allModels) { choice in
+                ForEach(DecisionModelSelection.choices) { choice in
                     Text(choice.displayName).tag(choice)
                 }
             }

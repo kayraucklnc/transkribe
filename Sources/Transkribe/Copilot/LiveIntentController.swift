@@ -20,7 +20,7 @@ final class LiveIntentController {
     private weak var ai: AIService?
     private let startedAt: Date
     private let config: IntentConfig
-    private let decisionModel: AIModel
+    private let decisionModel: DecisionModelSelection
     private var session: LiveIntentSession?
     private var incoming: [Update] = []
     private var timer: Task<Void, Never>?
@@ -117,7 +117,7 @@ final class LiveIntentController {
                     try Task.checkCancellation()
                     guard model.copilotSettings.intents else { return }
                     session = LiveIntentSession(meetingID: meetingID, startedAt: startedAt, config: config,
-                        provider: IntentMeteredProvider(base: provider, counter: meter), model: decisionModel)
+                        provider: IntentMeteredProvider(base: provider, counter: meter), model: AnthropicAPIProvider.haiku)
                     for id in mutedIntentIDs { await session?.mute(id) }
                 }
                 guard let session else { return }
