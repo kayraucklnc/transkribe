@@ -41,6 +41,8 @@ Enable **Ask while recording** in Settings → AI to ask questions during a reco
 
 Add an xAI key in Settings → AI to select Grok for streamed answers with web and X search. Selecting Grok sends the transcript and questions to xAI. Transkribe stores the key in Keychain. Transkribe never selects Grok as an automatic fallback.
 
+Add an OpenRouter key in Settings → AI to select Grok 4.3, Claude Haiku 5.5, or GPT-6 Luna for streamed Ask answers. Transkribe stores this key in Keychain under `openrouter-api-key`. Selecting an OpenRouter model sends transcript text and questions to OpenRouter and the model provider. Without the key, OpenRouter is unavailable and the app keeps your selection. Transkribe never selects OpenRouter as an automatic fallback.
+
 **Settings → AI → Background work → Decision model** selects a separate model for background features.
 It defaults to Claude Haiku 4.5 through the Anthropic API. This setting does not enable background features.
 Apple Intelligence keeps this work on your Mac. Other choices send transcript text to their cloud provider.
