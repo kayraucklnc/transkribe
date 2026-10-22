@@ -21,6 +21,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Transkribe"
 cp "$MCP" "$APP/Contents/MacOS/transkribe-mcp"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp -R "$(dirname "$BIN")/Transkribe_TranskribeCore.bundle" "$APP/Contents/Resources/"
 
 echo "→ Rendering icon"
 ICONSET="$(mktemp -d)/AppIcon.iconset"

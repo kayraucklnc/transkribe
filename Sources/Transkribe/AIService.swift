@@ -30,9 +30,10 @@ final class AIService {
 
     init(model: AppModel) {
         self.model = model
-        providers = [ClaudeCodeProvider(), AppleIntelligenceProvider(), AnthropicAPIProvider(), XAIProvider()]
+        providers = [ClaudeCodeProvider(), AppleIntelligenceProvider(), AnthropicAPIProvider(), XAIProvider(), OpenRouterProvider()]
         let saved = UserDefaults.standard.data(forKey: Self.selectionKey).flatMap { try? JSONDecoder().decode(AIModel.self, from: $0) }
         selectedModel = saved ?? ClaudeCodeProvider.sonnet
+        model.intentAI = self
         Task { await refreshAvailability() }
     }
 
@@ -46,13 +47,55 @@ final class AIService {
         availability[model.provider]?.isAvailable ?? false
     }
 
+    var decisionModelNotice: String? {
+        guard let chosen = model?.copilotSettings.decisionModel else { return nil }
+        let reason: String
+        if !chosen.isSupported {
+            reason = "The selected model is no longer offered."
+        } else {
+            switch availability[chosen.provider] {
+            case .unavailable(let detail)?: reason = detail
+            case .available?, nil: return nil
+            }
+        }
+        return "Background work stopped. \(chosen.displayName) is unavailable. \(reason)"
+    }
+
+    func decisionSession(meetingID: UUID, startedAt: Date, config: IntentConfig,
+                         counter: IntentTokenCounter) async -> LiveIntentSession? {
+        guard let appModel = model else { return nil }
+        let chosen = appModel.copilotSettings.decisionModel
+        if let candidate = providers.first(where: { $0.kind == chosen.provider }) {
+            let current = await candidate.availability()
+            guard appModel.copilotSettings.decisionModel == chosen else { return nil }
+            availability[chosen.provider] = current
+        }
+        guard chosen.isSupported, availability[chosen.provider]?.isAvailable == true else {
+            appModel.show(message: decisionModelNotice ?? "Background work stopped. The selected decision model is unavailable.")
+            return nil
+        }
+        switch chosen {
+        case .haiku:
+            guard let provider = DecisionModelSelection.provider(for: chosen, providers: providers, availability: availability) else {
+                appModel.show(message: "Background work stopped. The selected decision model is unavailable.")
+                return nil
+            }
+            return LiveIntentSession(meetingID: meetingID, startedAt: startedAt, config: config,
+                provider: IntentMeteredProvider(base: provider, counter: counter), model: AnthropicAPIProvider.haiku)
+        case .openRouter(let decisionModel):
+            let client = OpenRouterDecisionClient(onUsage: { await counter.record($0) })
+            return LiveIntentSession(meetingID: meetingID, startedAt: startedAt, config: config,
+                decisionClient: client, model: decisionModel)
+        }
+    }
+
     func refreshAvailability() async {
         for provider in providers {
             availability[provider.kind] = await provider.availability()
         }
         // Prefer a model that actually works over a remembered one that doesn't.
         if !isAvailable(selectedModel),
-           let working = AIModelSelection.automaticFallback(models: allModels, availability: availability) {
+           let working = AIModelSelection.automaticFallback(models: allModels, availability: availability, selectedModel: selectedModel) {
             selectedModel = working
         }
     }
@@ -189,6 +232,10 @@ final class AIService {
 
     func clearChat(_ id: Transcript.ID) {
         cancelAnswer(id)
+        if let controller = model?.liveIntents, controller.meetingID == id {
+            controller.clearChat()
+        }
+        model?.agentAnswerStore?.clear(conversationId: id)
         model?.update(id, persist: true) { $0.chat = nil }
     }
 

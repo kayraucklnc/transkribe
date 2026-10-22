@@ -37,7 +37,7 @@ struct InsightsPanel: View {
                     }
                 }
                 Spacer()
-                if !isLive || model.copilotSettings.askWhileLive { ModelPicker() }
+                if !isLive || model.copilotSettings.askWhileLive || model.copilotSettings.intents { ModelPicker() }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -150,7 +150,7 @@ struct ModelPicker: View {
     static func shortName(_ model: AIModel) -> String {
         switch model.provider {
         case .appleIntelligence: "On-device"
-        case .xai: model.displayName
+        case .xai, .openRouter: model.displayName
         case .claudeCode, .anthropicAPI:
             model.displayName
                 .replacingOccurrences(of: " (Claude Code)", with: "")
@@ -164,6 +164,7 @@ struct ModelPicker: View {
         case .appleIntelligence: "On this Mac · private"
         case .anthropicAPI: "Claude · API key"
         case .xai: "Grok · xAI API key"
+        case .openRouter: "OpenRouter · API key"
         }
     }
 
@@ -172,7 +173,7 @@ struct ModelPicker: View {
         case .claudeCode: "terminal"
         case .appleIntelligence: "apple.intelligence"
         case .anthropicAPI: "key"
-        case .xai: "globe"
+        case .xai, .openRouter: "globe"
         }
     }
 }
@@ -388,6 +389,14 @@ private struct AskTab: View {
                         ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
                             ChatMessageView(message: message)
                         }
+                        if model.copilotSettings.intents, let controller = model.liveIntents,
+                           controller.meetingID == transcript.id {
+                            if let notice = controller.notice {
+                                Label(notice, systemImage: "exclamationmark.triangle.fill")
+                                    .font(.callout).foregroundStyle(.orange)
+                            }
+                            IntentCardsView(controller: controller)
+                        }
                         if let draft {
                             if let error = draft.error {
                                 ErrorCard(message: error) { ai.cancelAnswer(transcript.id) }
@@ -402,6 +411,8 @@ private struct AskTab: View {
                     .padding(16)
                 }
                 .onChange(of: draft?.text) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+                .onChange(of: model.liveIntents?.cards.last?.id) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+                .onChange(of: model.liveIntents?.cards.last?.answer) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
                 .onChange(of: messages.last) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
             if allowsTyping {

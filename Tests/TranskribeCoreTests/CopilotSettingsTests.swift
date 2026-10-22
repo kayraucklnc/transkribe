@@ -3,6 +3,48 @@ import Testing
 @testable import TranskribeCore
 
 @Suite struct CopilotSettingsTests {
+    @Test func intentsDefaultOffAndEnableLiveInsights() throws {
+        let old = try JSONDecoder().decode(CopilotSettings.self, from: Data("{}".utf8))
+        #expect(!old.intents)
+        let settings = CopilotSettings(intents: true)
+        #expect(settings.showsInsights(isLive: true))
+        #expect(!settings.canAsk(status: .transcribing, isLive: true))
+        let defaults = Fixtures.temporaryDefaults()
+        settings.save(to: defaults)
+        #expect(CopilotSettings.load(from: defaults) == settings)
+    }
+
+    @Test func decisionModelDefaultsToHaikuAndPersistsIndependently() throws {
+        let old = try JSONDecoder().decode(CopilotSettings.self,
+            from: Data(#"{"fastLiveWindow":true}"#.utf8))
+        #expect(old.decisionModel == .haiku)
+        #expect(old.fastLiveWindow)
+        let null = try JSONDecoder().decode(CopilotSettings.self,
+            from: Data(#"{"decisionModel":null}"#.utf8))
+        #expect(null.decisionModel == .haiku)
+
+        let defaults = Fixtures.temporaryDefaults()
+        var settings = old
+        settings.decisionModel = .openRouter(.jev)
+        settings.save(to: defaults)
+        #expect(CopilotSettings.load(from: defaults).decisionModel == .openRouter(.jev))
+        #expect(CopilotSettings.load(from: defaults).fastLiveWindow)
+        #expect(!CopilotSettings.load(from: defaults).askWhileLive)
+    }
+
+    @Test(arguments: [AppleIntelligenceProvider.model, ClaudeCodeProvider.haiku,
+                      AnthropicAPIProvider.sonnet, XAIProvider.grok])
+    func legacyDecisionSelectionsMigrateToHaiku(_ model: AIModel) throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "decisionModel": JSONSerialization.jsonObject(with: JSONEncoder().encode(model)),
+            "fastLiveWindow": true, "intents": true,
+        ])
+        let settings = try JSONDecoder().decode(CopilotSettings.self, from: data)
+        #expect(settings.decisionModel == .haiku)
+        #expect(settings.fastLiveWindow)
+        #expect(settings.intents)
+    }
+
     @Test(arguments: ["{}", #"{"retiredFlag":true}"#, #"{"fastLiveWindow":null,"futureFlag":true}"#])
     func missingFlagsDecodeToDefaults(_ json: String) throws {
         let settings = try JSONDecoder().decode(CopilotSettings.self, from: Data(json.utf8))
@@ -31,7 +73,7 @@ import Testing
         let data = try #require(defaults.data(forKey: "copilotSettings"))
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["webhook"] as? String == "https://webhook.example/events")
-        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "webhook"])
+        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "webhook", "decisionModel", "intents"])
     }
 
     @Test func mcpSettingsPersistWithoutSecretsAndDecodeOldData() throws {
@@ -42,7 +84,7 @@ import Testing
         let settings = CopilotSettings(mcpServer: true, mcpPort: 8899, mcpReadScopeDays: 3)
         let data = try JSONEncoder().encode(settings)
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays"])
+        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "decisionModel", "intents"])
         #expect(!String(decoding: data, as: UTF8.self).lowercased().contains("token"))
         #expect(try JSONDecoder().decode(CopilotSettings.self, from: data) == settings)
     }
