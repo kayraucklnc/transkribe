@@ -164,6 +164,81 @@ private let intentQuestion = DecisionQuestion(type: .choice, instructions: "Sele
         #expect(didStop)
         #expect(usage.values.isEmpty)
     }
+
+    @Test(arguments: [
+        "not-json",
+        #"{"answers":{},"usage":{"input_tokens":1,"output_tokens":1}}"#,
+        choiceResponse.replacingOccurrences(of: "\"intent\":", with: "\"unrequested\":"),
+        choiceResponse.replacingOccurrences(of: "\"type\":\"choice\"", with: "\"type\":\"score\""),
+        choiceResponse.replacingOccurrences(of: "\"type\":\"choice\"", with: "\"type\":\"noul\""),
+        choiceResponse.replacingOccurrences(of: "\"choice\":\"ask\",", with: ""),
+        choiceResponse.replacingOccurrences(of: "0.91", with: "1.1"),
+        choiceResponse.replacingOccurrences(of: "\"ask\":0.95", with: "\"unknown\":0.95"),
+        choiceResponse.replacingOccurrences(of: "\"ask\":0.95", with: "\"ask\":-0.1"),
+        choiceResponse.replacingOccurrences(of: "\"input_tokens\":476", with: "\"input_tokens\":-1"),
+        choiceResponse.replacingOccurrences(of: "\"cost\":0.000019992", with: "\"cost\":-1"),
+    ])
+    func rejectsMalformedOrMismatchedResponses(body: String) async {
+        let usage = DecisionUsageRecorder()
+        let session = decisionSession { _ in (200, body) }
+        defer { session.invalidateAndCancel() }
+        let client = OpenRouterDecisionClient(session: session, apiKey: { "key" }, onUsage: { usage.append($0) })
+        await #expect(throws: AIError("OpenRouter returned an invalid decision response.")) {
+            try await client.decide(model: .jev, state: "Meeting", questions: ["intent": intentQuestion])
+        }
+        #expect(usage.values.isEmpty)
+    }
+
+    @Test(arguments: ["null", "-0.1", "1.1"])
+    func rejectsInvalidNoulProbabilities(probability: String) async {
+        let session = decisionSession { _ in
+            (200, """
+            {"answers":{"relevant":{"type":"noul","noul":\(probability)}},
+            "usage":{"input_tokens":1,"output_tokens":1}}
+            """)
+        }
+        defer { session.invalidateAndCancel() }
+        let client = OpenRouterDecisionClient(session: session, apiKey: { "key" })
+        await #expect(throws: AIError("OpenRouter returned an invalid decision response.")) {
+            try await client.decide(model: .jev, state: "Meeting", questions: [
+                "relevant": DecisionQuestion(type: .noul, instructions: "Is this relevant?",
+                                             criteria: ["true": "Relevant.", "false": "Unrelated."]),
+            ])
+        }
+    }
+
+    @Test(arguments: [nil, "", " \n "] as [String?])
+    func missingKeyNeverSendsTranscriptData(key: String?) async {
+        let session = decisionSession { _ in
+            Issue.record("The client sent transcript data without a key.")
+            return (200, choiceResponse)
+        }
+        defer { session.invalidateAndCancel() }
+        let client = OpenRouterDecisionClient(session: session, apiKey: { key })
+        await #expect(throws: AIError("Add an OpenRouter API key in Settings.")) {
+            try await client.decide(model: .jev, state: "Meeting", questions: ["intent": intentQuestion])
+        }
+    }
+
+    @Test func cancellationBeforeTheCallDoesNotReadAKeyOrSendData() async {
+        let gate = AsyncStream<Void>.makeStream()
+        let session = decisionSession { _ in
+            Issue.record("The client sent transcript data after cancellation.")
+            return (200, choiceResponse)
+        }
+        defer { session.invalidateAndCancel() }
+        let client = OpenRouterDecisionClient(session: session, apiKey: {
+            Issue.record("The client read a key after cancellation.")
+            return "key"
+        })
+        let task = Task {
+            for await _ in gate.stream {}
+            return try await client.decide(model: .jev, state: "Meeting", questions: ["intent": intentQuestion])
+        }
+        task.cancel()
+        gate.continuation.finish()
+        await #expect(throws: CancellationError.self) { try await task.value }
+    }
 }
 
 private final class DecisionUsageRecorder: @unchecked Sendable {

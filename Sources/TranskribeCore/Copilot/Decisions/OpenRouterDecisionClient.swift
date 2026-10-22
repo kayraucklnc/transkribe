@@ -13,6 +13,7 @@ public struct OpenRouterDecisionClient: DecisionClient {
     }
 
     private static let endpoint = URL(string: "https://openrouter.ai/api/alpha/decisions")!
+    private static let invalidResponse = AIError("OpenRouter returned an invalid decision response.")
     private let session: URLSession
     private let apiKey: @Sendable () -> String?
     private let onUsage: @Sendable (DecisionUsage) -> Void
@@ -42,14 +43,8 @@ public struct OpenRouterDecisionClient: DecisionClient {
         try Task.checkCancellation()
         let status = (httpResponse as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else { throw AIError(Self.httpError(status: status)) }
-        let response = try JSONDecoder().decode(Response.self, from: data)
-        for (id, answer) in response.answers {
-            if answer.type == .choice {
-                guard let choice = answer.choice, questions[id]?.criteria[choice] != nil else {
-                    throw AIError("OpenRouter returned an unknown decision choice.")
-                }
-            }
-        }
+        let response = try Self.decode(data, questions: questions)
+        try Task.checkCancellation()
         onUsage(response.usage)
         return response.answers
     }
@@ -74,5 +69,40 @@ public struct OpenRouterDecisionClient: DecisionClient {
         case 500...599: "OpenRouter has a server error. Try again later."
         default: "OpenRouter returned an HTTP error (\(status))."
         }
+    }
+
+    private static func decode(_ data: Data, questions: [String: DecisionQuestion]) throws -> Response {
+        let response: Response
+        do {
+            response = try JSONDecoder().decode(Response.self, from: data)
+        } catch {
+            // Decoder errors can contain response data. Show a fixed message.
+            throw invalidResponse
+        }
+        guard Set(response.answers.keys) == Set(questions.keys),
+              response.usage.inputTokens >= 0, response.usage.outputTokens >= 0,
+              response.usage.cost.map({ $0.isFinite && $0 >= 0 }) ?? true else { throw invalidResponse }
+        for (id, answer) in response.answers {
+            guard let question = questions[id], answer.type == question.type else { throw invalidResponse }
+            switch answer.type {
+            case .choice:
+                guard let choice = answer.choice else { throw invalidResponse }
+                guard question.criteria[choice] != nil else {
+                    throw AIError("OpenRouter returned an unknown decision choice.")
+                }
+                if let confidence = answer.confidence, !isProbability(confidence) { throw invalidResponse }
+                if let probabilities = answer.probabilities {
+                    guard Set(probabilities.keys).isSubset(of: Set(question.criteria.keys)),
+                          probabilities.values.allSatisfy(isProbability) else { throw invalidResponse }
+                }
+            case .noul:
+                guard let probability = answer.noul, isProbability(probability) else { throw invalidResponse }
+            }
+        }
+        return response
+    }
+
+    private static func isProbability(_ value: Double) -> Bool {
+        value.isFinite && (0...1).contains(value)
     }
 }
