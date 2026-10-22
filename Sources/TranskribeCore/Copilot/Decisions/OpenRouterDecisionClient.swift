@@ -27,6 +27,7 @@ public struct OpenRouterDecisionClient: DecisionClient {
 
     public func decide(model: DecisionModel, state: String,
                        questions: [String: DecisionQuestion]) async throws -> [String: DecisionAnswer] {
+        try Task.checkCancellation()
         guard let key = apiKey()?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
             throw AIError("Add an OpenRouter API key in Settings.")
         }
@@ -37,7 +38,10 @@ public struct OpenRouterDecisionClient: DecisionClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.httpBody = try JSONEncoder().encode(Request(model: model.id, state: state, questions: questions))
-        let (data, _) = try await session.data(for: request)
+        let (data, httpResponse) = try await send(request)
+        try Task.checkCancellation()
+        let status = (httpResponse as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else { throw AIError(Self.httpError(status: status)) }
         let response = try JSONDecoder().decode(Response.self, from: data)
         for (id, answer) in response.answers {
             if answer.type == .choice {
@@ -48,5 +52,27 @@ public struct OpenRouterDecisionClient: DecisionClient {
         }
         onUsage(response.usage)
         return response.answers
+    }
+
+    private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch let error as URLError {
+            if error.code == .cancelled || Task.isCancelled { throw CancellationError() }
+            if error.code == .timedOut {
+                throw AIError("OpenRouter took too long to decide. Try again.")
+            }
+            throw AIError("Cannot reach OpenRouter. Check your connection and try again.")
+        }
+    }
+
+    private static func httpError(status: Int) -> String {
+        switch status {
+        case 401: "OpenRouter rejected your API key. Check it in Settings."
+        case 402: "Your OpenRouter credits are exhausted. Add credits to your OpenRouter account."
+        case 429: "You reached the OpenRouter rate limit. Wait a minute and try again."
+        case 500...599: "OpenRouter has a server error. Try again later."
+        default: "OpenRouter returned an HTTP error (\(status))."
+        }
     }
 }

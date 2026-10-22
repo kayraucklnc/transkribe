@@ -91,6 +91,79 @@ private let intentQuestion = DecisionQuestion(type: .choice, instructions: "Sele
         #expect(answers["relevant"]?.noul == 0.96)
         #expect(usage.values == [DecisionUsage(inputTokens: 300, outputTokens: 20)])
     }
+
+    @Test(arguments: [
+        (401, "OpenRouter rejected your API key. Check it in Settings."),
+        (402, "Your OpenRouter credits are exhausted. Add credits to your OpenRouter account."),
+        (429, "You reached the OpenRouter rate limit. Wait a minute and try again."),
+        (503, "OpenRouter has a server error. Try again later."),
+        (418, "OpenRouter returned an HTTP error (418)."),
+    ])
+    func mapsHTTPErrorsWithoutExposingServerContent(status: Int, message: String) async {
+        let usage = DecisionUsageRecorder()
+        let session = decisionSession { _ in (status, #"{"error":{"message":"private-test-key secret transcript"}}"#) }
+        defer { session.invalidateAndCancel() }
+        let client = OpenRouterDecisionClient(session: session, apiKey: { "key" }, onUsage: { usage.append($0) })
+        await #expect(throws: AIError(message)) {
+            try await client.decide(model: .jev, state: "Meeting", questions: ["intent": intentQuestion])
+        }
+        #expect(usage.values.isEmpty)
+    }
+
+    @Test(arguments: [
+        (URLError.Code.timedOut, "OpenRouter took too long to decide. Try again."),
+        (.notConnectedToInternet, "Cannot reach OpenRouter. Check your connection and try again."),
+    ])
+    func mapsTransportErrors(code: URLError.Code, message: String) async {
+        let session = decisionSession { request in
+            #expect(request.timeoutInterval == 30)
+            throw URLError(code)
+        }
+        defer { session.invalidateAndCancel() }
+        let client = OpenRouterDecisionClient(session: session, apiKey: { "key" })
+        await #expect(throws: AIError(message)) {
+            try await client.decide(model: .jev, state: "Meeting", questions: ["intent": intentQuestion])
+        }
+    }
+
+    @Test func cancellationStopsTheActiveRequest() async {
+        let started = AsyncStream<Void>.makeStream()
+        let stopped = AsyncStream<Void>.makeStream()
+        let usage = DecisionUsageRecorder()
+        let session = decisionSession { _ in (200, choiceResponse) }
+        DecisionURLProtocol.completesResponse = false
+        DecisionURLProtocol.onStart = { started.continuation.yield() }
+        DecisionURLProtocol.onStop = { stopped.continuation.yield() }
+        let timeout = Task {
+            try? await Task.sleep(for: .seconds(5))
+            if !Task.isCancelled {
+                Issue.record("Cancellation did not stop the decision request.")
+                session.invalidateAndCancel()
+                started.continuation.finish()
+                stopped.continuation.finish()
+            }
+        }
+        defer {
+            timeout.cancel()
+            session.invalidateAndCancel()
+            started.continuation.finish()
+            stopped.continuation.finish()
+        }
+        let client = OpenRouterDecisionClient(session: session, apiKey: { "key" }, onUsage: { usage.append($0) })
+        let task = Task {
+            try await client.decide(model: .jev, state: "Meeting", questions: ["intent": intentQuestion])
+        }
+        for await _ in started.stream { break }
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        var didStop = false
+        for await _ in stopped.stream {
+            didStop = true
+            break
+        }
+        #expect(didStop)
+        #expect(usage.values.isEmpty)
+    }
 }
 
 private final class DecisionUsageRecorder: @unchecked Sendable {
@@ -112,6 +185,9 @@ private final class DecisionUsageRecorder: @unchecked Sendable {
 
 private final class DecisionURLProtocol: URLProtocol {
     static var handler: ((URLRequest) throws -> (Int, String))?
+    static var completesResponse = true
+    static var onStart: (() -> Void)?
+    static var onStop: (() -> Void)?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -124,17 +200,21 @@ private final class DecisionURLProtocol: URLProtocol {
                                            headerFields: ["Content-Type": "application/json"])!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(body.utf8))
-            client?.urlProtocolDidFinishLoading(self)
+            if Self.completesResponse { client?.urlProtocolDidFinishLoading(self) }
+            Self.onStart?()
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }
     }
 
-    override func stopLoading() {}
+    override func stopLoading() { Self.onStop?() }
 }
 
 private func decisionSession(_ handler: @escaping (URLRequest) throws -> (Int, String)) -> URLSession {
     DecisionURLProtocol.handler = handler
+    DecisionURLProtocol.completesResponse = true
+    DecisionURLProtocol.onStart = nil
+    DecisionURLProtocol.onStop = nil
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [DecisionURLProtocol.self]
     return URLSession(configuration: configuration)
