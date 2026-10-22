@@ -9,15 +9,20 @@ public struct OpenRouterDecisionClient: DecisionClient {
 
     private struct Response: Decodable {
         let answers: [String: DecisionAnswer]
+        let usage: DecisionUsage
     }
 
     private static let endpoint = URL(string: "https://openrouter.ai/api/alpha/decisions")!
     private let session: URLSession
     private let apiKey: @Sendable () -> String?
+    private let onUsage: @Sendable (DecisionUsage) -> Void
 
-    public init(session: URLSession = .shared, apiKey: (@Sendable () -> String?)? = nil) {
+    /// Reports usage once per successful request, across all questions.
+    public init(session: URLSession = .shared, apiKey: (@Sendable () -> String?)? = nil,
+                onUsage: @escaping @Sendable (DecisionUsage) -> Void = { _ in }) {
         self.session = session
         self.apiKey = apiKey ?? { KeychainStore().get(account: OpenRouterKeychain.account) }
+        self.onUsage = onUsage
     }
 
     public func decide(model: DecisionModel, state: String,
@@ -33,6 +38,15 @@ public struct OpenRouterDecisionClient: DecisionClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.httpBody = try JSONEncoder().encode(Request(model: model.id, state: state, questions: questions))
         let (data, _) = try await session.data(for: request)
-        return try JSONDecoder().decode(Response.self, from: data).answers
+        let response = try JSONDecoder().decode(Response.self, from: data)
+        for (id, answer) in response.answers {
+            if answer.type == .choice {
+                guard let choice = answer.choice, questions[id]?.criteria[choice] != nil else {
+                    throw AIError("OpenRouter returned an unknown decision choice.")
+                }
+            }
+        }
+        onUsage(response.usage)
+        return response.answers
     }
 }
