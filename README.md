@@ -178,12 +178,19 @@ The instruction comes from the local configuration, not from speech.
 
 ### Spoken intents
 
-Copy [docs/intents.example.json](docs/intents.example.json) to
+Open **Settings → AI → Background work → Intents**.
+Select **Add the examples** to load the bundled [example intents](docs/intents.example.json), or select **Add intent**.
+Edit the ID, description, examples (one per line), speakers, destination, instruction, minimum confidence, and cooldown.
+Each intent has an on/off switch and **Edit**, **Duplicate**, and **Delete** controls.
+Select **Save intents** to validate and save all changes atomically to
 `~/Library/Application Support/Transkribe/intents.json`.
-Edit the fixed actions, then enable **Spoken intents** in **Settings → AI → Background work**.
+The editor shows validation errors inline. It preserves an invalid file until you save.
+**Reload** discards unsaved edits and reads the file again.
+Enable **Spoken intents** in the same **Background work** section to run them.
 Changes to the file or decision model apply to the next meeting.
 A missing or invalid file disables intents and shows a notice.
-All intents are off by default. The decision model never uses a fallback provider.
+A disabled intent never reaches the decision model. Existing files without `enabled` treat each intent as enabled.
+Spoken intents are off by default. The decision model never uses a fallback provider.
 
 The example sends explicit Grok requests to the selected Ask model.
 Select Grok in the model picker to use the fast xAI path.

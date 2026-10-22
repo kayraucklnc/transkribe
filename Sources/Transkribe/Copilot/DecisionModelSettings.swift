@@ -19,11 +19,12 @@ struct DecisionModelSettings: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
+            IntentEditorView()
         } header: {
             Text("Background work")
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Spoken intents use intents.json in the Transkribe Application Support folder. Actions can send speech to the Ask model or webhook.")
+                Text("Intent actions can send speech to the Ask model or webhook.")
                 Text("This model is separate from the default AI model. Selecting it does not enable background features.")
                 if model.copilotSettings.decisionModel.provider != .appleIntelligence {
                     Text("Background work sends transcript text to the selected cloud provider.")

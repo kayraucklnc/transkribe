@@ -39,7 +39,7 @@ final class LiveIntentController {
         self.ai = ai
         decisionModel = model.copilotSettings.decisionModel
         let loaded = IntentConfig.load(from: TranscriptStore.supportDirectory.appendingPathComponent("intents.json"))
-        config = loaded.config
+        config = IntentConfig(intents: loaded.config.intents.filter(\.enabled))
         notice = loaded.error
     }
 
