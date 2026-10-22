@@ -41,6 +41,73 @@ private let intentQuestion = DecisionQuestion(type: .choice, instructions: "Sele
         #expect(answers["intent"]?.confidence == 0.91)
         #expect(answers["intent"]?.probabilities == ["ask": 0.95, "none": 0.05])
     }
+
+    @Test func reportsUsageOnceForTheWholeRequest() async throws {
+        let usage = DecisionUsageRecorder()
+        let session = decisionSession { _ in (200, choiceResponse) }
+        defer { session.invalidateAndCancel() }
+        let client = OpenRouterDecisionClient(session: session, apiKey: { "key" }, onUsage: { usage.append($0) })
+        _ = try await client.decide(model: .luna, state: "Meeting", questions: ["intent": intentQuestion])
+        #expect(usage.values == [DecisionUsage(inputTokens: 476, outputTokens: 70, cost: 0.000019992)])
+    }
+
+    @Test func rejectsAnUnknownChoiceWithoutReportingSuccessfulUsage() async {
+        let usage = DecisionUsageRecorder()
+        let session = decisionSession { _ in (200, choiceResponse.replacingOccurrences(of: "\"choice\":\"ask\"",
+                                                                                       with: "\"choice\":\"delete\"")) }
+        defer { session.invalidateAndCancel() }
+        let client = OpenRouterDecisionClient(session: session, apiKey: { "key" }, onUsage: { usage.append($0) })
+        await #expect(throws: AIError("OpenRouter returned an unknown decision choice.")) {
+            try await client.decide(model: .jev, state: "Meeting", questions: ["intent": intentQuestion])
+        }
+        #expect(usage.values.isEmpty)
+    }
+
+    @Test func sendsNoulAndChoiceTogetherAndReportsUsageOnce() async throws {
+        let usage = DecisionUsageRecorder()
+        let session = decisionSession { request in
+            let body = try #require(JSONSerialization.jsonObject(with: decisionRequestBody(request)) as? [String: Any])
+            let questions = try #require(body["questions"] as? [String: [String: Any]])
+            #expect(questions["relevant"]?["type"] as? String == "noul")
+            #expect(questions["relevant"]?["instructions"] as? String == "Does this concern Acme?")
+            #expect(questions["relevant"]?["criteria"] as? [String: String]
+                == ["true": "Acme is discussed.", "false": "Another topic is discussed."])
+            return (200, """
+            {"model":"typesafe/jev-1.14","answers":{"intent":{"type":"choice","choice":"ask"},
+            "relevant":{"type":"noul","noul":0.96}},"usage":{"input_tokens":300,"output_tokens":20}}
+            """)
+        }
+        defer { session.invalidateAndCancel() }
+        let client = OpenRouterDecisionClient(session: session, apiKey: { "key" }, onUsage: { usage.append($0) })
+        let answers = try await client.decide(model: .jev, state: "Meeting", questions: [
+            "intent": intentQuestion,
+            "relevant": DecisionQuestion(type: .noul, instructions: "Does this concern Acme?",
+                                         criteria: ["true": "Acme is discussed.", "false": "Another topic is discussed."]),
+        ])
+        #expect(answers["intent"]?.choice == "ask")
+        #expect(answers["intent"]?.confidence == nil)
+        #expect(answers["intent"]?.probabilities == nil)
+        #expect(answers["relevant"]?.type == .noul)
+        #expect(answers["relevant"]?.noul == 0.96)
+        #expect(usage.values == [DecisionUsage(inputTokens: 300, outputTokens: 20)])
+    }
+}
+
+private final class DecisionUsageRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [DecisionUsage] = []
+
+    var values: [DecisionUsage] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded
+    }
+
+    func append(_ usage: DecisionUsage) {
+        lock.lock()
+        defer { lock.unlock() }
+        recorded.append(usage)
+    }
 }
 
 private final class DecisionURLProtocol: URLProtocol {
