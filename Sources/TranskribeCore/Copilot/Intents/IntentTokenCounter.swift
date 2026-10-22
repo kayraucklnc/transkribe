@@ -1,6 +1,6 @@
 import Foundation
 
-/// These counts estimate one token per four characters. They are not provider billing totals.
+/// Decision requests use API token counts. Text streams use estimates of one token per four characters.
 public struct IntentTokenUsage: Equatable, Sendable {
     public var input = 0
     public var output = 0
@@ -13,6 +13,11 @@ public actor IntentTokenCounter {
     public init() {}
 
     public func usage() -> IntentTokenUsage { counts }
+
+    public func record(_ usage: DecisionUsage) {
+        counts.input += max(0, usage.inputTokens)
+        counts.output += max(0, usage.outputTokens)
+    }
 
     public func record(inputCharacters: Int, outputCharacters: Int) {
         counts.input += (max(0, inputCharacters) + 3) / 4

@@ -7,7 +7,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
     public var mcpPort: UInt16
     public var mcpReadScopeDays: Int
     public var webhook: URL?
-    public var decisionModel: AIModel
+    public var decisionModel: DecisionModelSelection
     public var intents: Bool
 
     public static let `default` = CopilotSettings()
@@ -26,7 +26,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
 
     public init(fastLiveWindow: Bool = false, askWhileLive: Bool = false, mcpServer: Bool = false,
                 mcpPort: UInt16 = 7788, mcpReadScopeDays: Int = 7, webhook: URL? = nil,
-                decisionModel: AIModel = AnthropicAPIProvider.haiku, intents: Bool = false) {
+                decisionModel: DecisionModelSelection = .haiku, intents: Bool = false) {
         self.fastLiveWindow = fastLiveWindow
         self.askWhileLive = askWhileLive
         self.mcpServer = mcpServer
@@ -46,7 +46,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         mcpReadScopeDays = try values.decodeIfPresent(Int.self, forKey: .mcpReadScopeDays) ?? 7
         webhook = try values.decodeIfPresent(URL.self, forKey: .webhook)
         intents = try values.decodeIfPresent(Bool.self, forKey: .intents) ?? false
-        decisionModel = try values.decodeIfPresent(AIModel.self, forKey: .decisionModel) ?? AnthropicAPIProvider.haiku
+        decisionModel = try values.decodeIfPresent(DecisionModelSelection.self, forKey: .decisionModel) ?? .haiku
     }
 
     public static func load(from defaults: UserDefaults = .standard) -> CopilotSettings {

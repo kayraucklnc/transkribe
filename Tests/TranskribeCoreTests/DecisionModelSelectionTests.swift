@@ -1,42 +1,32 @@
+import Foundation
 import Testing
 @testable import TranskribeCore
 
 @Suite struct DecisionModelSelectionTests {
-    @Test func unavailableAppleNeverUsesPresentAnthropicKey() async {
-        let cloud = AnthropicAPIProvider(apiKey: { "test-anthropic-key" })
-        let availability: [AIProviderKind: AIAvailability] = [
-            .appleIntelligence: .unavailable(reason: "Apple Intelligence is disabled."),
-            .anthropicAPI: await cloud.availability(),
-        ]
-        #expect(availability[.anthropicAPI] == .available)
-        let provider = DecisionModelSelection.provider(for: AppleIntelligenceProvider.model,
-            providers: [AppleIntelligenceProvider(), cloud], availability: availability)
-        #expect(provider == nil)
+    @Test func choicesContainOnlyHaikuAndCuratedDecisions() throws {
+        #expect(DecisionModelSelection.choices == [.haiku, .openRouter(.jev), .openRouter(.luna)])
+        for choice in DecisionModelSelection.choices {
+            #expect(try JSONDecoder().decode(DecisionModelSelection.self,
+                from: JSONEncoder().encode(choice)) == choice)
+        }
     }
 
-    @Test func modelNoLongerOfferedNeverUsesAnotherModel() {
-        let removed = AIModel(provider: .anthropicAPI, id: "removed-model", displayName: "Removed model")
-        let provider = DecisionModelSelection.provider(for: removed,
-            providers: [AnthropicAPIProvider(apiKey: { "test-anthropic-key" })],
-            availability: [.anthropicAPI: .available])
-        #expect(provider == nil)
+    @Test func unavailableHaikuNeverUsesAnotherProvider() {
+        let providers: [any AIProvider] = [AnthropicAPIProvider(), ClaudeCodeProvider(), OpenRouterProvider()]
+        #expect(DecisionModelSelection.provider(for: .haiku, providers: providers,
+            availability: [.anthropicAPI: .unavailable(reason: "No key"), .claudeCode: .available,
+                           .openRouter: .available]) == nil)
     }
 
-    @Test(arguments: [AppleIntelligenceProvider.model, ClaudeCodeProvider.haiku,
-                      AnthropicAPIProvider.haiku, XAIProvider.grok])
-    func availableChoiceUsesOnlyItsOwnProvider(_ model: AIModel) {
-        let providers: [any AIProvider] = [ClaudeCodeProvider(), AppleIntelligenceProvider(),
-                                           AnthropicAPIProvider(), XAIProvider()]
-        let availability = Dictionary(uniqueKeysWithValues: AIProviderKind.allCases.map { ($0, AIAvailability.available) })
-        let provider = DecisionModelSelection.provider(for: model, providers: providers, availability: availability)
-        #expect(provider?.kind == model.provider)
-    }
-
-    @Test func uncheckedOrMissingProviderStopsBackgroundWork() {
-        let cloud = AnthropicAPIProvider(apiKey: { "test-anthropic-key" })
-        #expect(DecisionModelSelection.provider(for: AppleIntelligenceProvider.model,
-            providers: [AppleIntelligenceProvider(), cloud], availability: [.anthropicAPI: .available]) == nil)
-        #expect(DecisionModelSelection.provider(for: AppleIntelligenceProvider.model,
-            providers: [cloud], availability: [.appleIntelligence: .available, .anthropicAPI: .available]) == nil)
+    @Test func haikuUsesOnlyAnthropicAndDecisionsNeverUseChatProviders() throws {
+        let providers: [any AIProvider] = [AnthropicAPIProvider(), OpenRouterProvider()]
+        #expect(DecisionModelSelection.provider(for: .haiku, providers: providers,
+            availability: [.anthropicAPI: .available])?.kind == .anthropicAPI)
+        #expect(DecisionModelSelection.provider(for: .openRouter(.jev), providers: providers,
+            availability: [.anthropicAPI: .available, .openRouter: .available]) == nil)
+        let removed = DecisionModelSelection.openRouter(DecisionModel(id: "removed", displayName: "Removed"))
+        #expect(!removed.isSupported)
+        #expect(try JSONDecoder().decode(DecisionModelSelection.self,
+            from: JSONEncoder().encode(removed)) == removed)
     }
 }

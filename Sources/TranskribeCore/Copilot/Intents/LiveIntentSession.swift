@@ -44,6 +44,14 @@ public actor LiveIntentSession {
         self.engine = IntentEngine(config: config, provider: provider, model: model)
     }
 
+    public init(meetingID: UUID, startedAt: Date, config: IntentConfig, decisionClient: any DecisionClient,
+                model: DecisionModel, minNewWords: Int = 20) {
+        self.meetingID = meetingID
+        self.startedAt = startedAt
+        self.scheduler = EvaluationScheduler(minNewWords: minNewWords, now: startedAt)
+        self.engine = IntentEngine(config: config, decisionClient: decisionClient, model: model)
+    }
+
     public func evaluate(enabled: Bool, meIsReliable: Bool, at now: Date = Date(), force: Bool = false) async throws -> IntentDispatch? {
         guard enabled, hasNewSpeech, !evaluating else { return nil }
         guard force || scheduler.shouldEvaluate(committedWordCount: wordCount, at: now) else { return nil }

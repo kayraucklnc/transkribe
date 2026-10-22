@@ -51,6 +51,21 @@ private let intentQuestion = DecisionQuestion(type: .choice, instructions: "Sele
         #expect(usage.values == [DecisionUsage(inputTokens: 476, outputTokens: 70, cost: 0.000019992)])
     }
 
+    @Test func decisionUsageReachesTheMeetingCounterBeforeTheRequestReturns() async throws {
+        let counter = IntentTokenCounter()
+        let session = decisionSession { _ in (200, choiceResponse) }
+        defer { session.invalidateAndCancel() }
+        let client = OpenRouterDecisionClient(session: session, apiKey: { "key" }, onUsage: {
+            await counter.record($0)
+        })
+        _ = try await client.decide(model: .jev, state: "Meeting", questions: ["intent": intentQuestion])
+        await counter.record(inputCharacters: 8, outputCharacters: 4)
+        let usage = await counter.usage()
+        #expect(usage.input == 478)
+        #expect(usage.output == 71)
+        #expect(usage.total == 549)
+    }
+
     @Test func rejectsAnUnknownChoiceWithoutReportingSuccessfulUsage() async {
         let usage = DecisionUsageRecorder()
         let session = decisionSession { _ in (200, choiceResponse.replacingOccurrences(of: "\"choice\":\"ask\"",
