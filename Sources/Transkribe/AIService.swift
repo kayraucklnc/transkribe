@@ -217,6 +217,9 @@ final class AIService {
 
     func clearChat(_ id: Transcript.ID) {
         cancelAnswer(id)
+        if let controller = model?.liveIntents, controller.meetingID == id {
+            controller.clearChat()
+        }
         model?.agentAnswerStore?.clear(conversationId: id)
         model?.update(id, persist: true) { $0.chat = nil }
     }

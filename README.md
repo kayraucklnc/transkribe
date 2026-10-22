@@ -194,6 +194,7 @@ Confidence, cooldown, duplicate ranges, and a five-run meeting cap limit actions
 
 Intent cards appear in the live Ask panel. **Mute for this meeting** stops that intent.
 **Dismiss** hides a card. Intent answers stream separately from typed questions.
+Clearing a meeting's chat cancels its intent actions and removes its intent cards.
 In Console, filter for subsystem `Transkribe` and category `Intents` to inspect lag records.
 Each record contains speech-end, commit, verdict, and action-dispatch times.
 The log also reports estimated input and output tokens per meeting for intent work.

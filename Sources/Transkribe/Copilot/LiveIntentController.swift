@@ -84,6 +84,12 @@ final class LiveIntentController {
         }
     }
 
+    func clearChat() {
+        evaluation?.cancel()
+        for task in actions.values { task.cancel() }
+        cards.removeAll()
+    }
+
     func dismiss(_ id: UUID) {
         cards.removeAll { $0.id == id }
     }
