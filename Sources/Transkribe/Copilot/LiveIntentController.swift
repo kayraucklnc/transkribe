@@ -108,16 +108,16 @@ final class LiveIntentController {
                     return
                 }
                 if session == nil {
-                    guard let provider = await ai.decisionProvider() else {
-                        notice = ai.decisionModelNotice
+                    guard let prepared = await ai.decisionSession(meetingID: meetingID, startedAt: startedAt,
+                        config: config, counter: meter) else {
+                        notice = ai.decisionModelNotice ?? "Background work stopped. The selected decision model is unavailable."
                         stopped = true
                         pause()
                         return
                     }
                     try Task.checkCancellation()
                     guard model.copilotSettings.intents else { return }
-                    session = LiveIntentSession(meetingID: meetingID, startedAt: startedAt, config: config,
-                        provider: IntentMeteredProvider(base: provider, counter: meter), model: AnthropicAPIProvider.haiku)
+                    session = prepared
                     for id in mutedIntentIDs { await session?.mute(id) }
                 }
                 guard let session else { return }
@@ -222,6 +222,6 @@ final class LiveIntentController {
     private func logUsage(_ usage: IntentTokenUsage) {
         guard usage != lastLoggedUsage else { return }
         lastLoggedUsage = usage
-        logger.info("Meeting \(self.meetingID.uuidString, privacy: .public) estimated intent tokens: input=\(usage.input) output=\(usage.output)")
+        logger.info("Meeting \(self.meetingID.uuidString, privacy: .public) intent tokens (API counts and stream estimates): input=\(usage.input) output=\(usage.output)")
     }
 }

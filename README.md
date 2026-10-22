@@ -44,8 +44,11 @@ Add an xAI key in Settings → AI to select Grok for streamed answers with web a
 Add an OpenRouter key in Settings → AI to select Grok 4.3, Claude Haiku 5.5, or GPT-6 Luna for streamed Ask answers. Transkribe stores this key in Keychain under `openrouter-api-key`. Selecting an OpenRouter model sends transcript text and questions to OpenRouter and the model provider. Without the key, OpenRouter is unavailable and the app keeps your selection. Transkribe never selects OpenRouter as an automatic fallback.
 
 **Settings → AI → Background work → Decision model** selects a separate model for background features.
-It defaults to Claude Haiku 4.5 through the Anthropic API. This setting does not enable background features.
-Apple Intelligence keeps this work on your Mac. Other choices send transcript text to their cloud provider.
+Choose Jev Latest or GPT-6 Luna Decisions through OpenRouter, or Claude Haiku 4.5 through the Anthropic API.
+Haiku is the only chat model in this picker. The setting defaults to Haiku.
+Settings saved by earlier versions also migrate to Haiku. Other copilot settings retain their values.
+Selecting a model does not enable background features. Each choice sends transcript text to its cloud provider.
+Decision models use the same OpenRouter key as Ask.
 If the selected model becomes unavailable, background work stops with a notice. Transkribe never selects a replacement model.
 
 **Many languages.** Whisper handles almost any language; Parakeet is used for European languages where it is faster and more accurate. Pick the languages you speak and each stretch of audio is locked to one of them, which avoids misdetections and repetition loops. Search ignores accents, and Turkish ı/İ just works.
@@ -200,14 +203,26 @@ The competitor intent uses the agent webhook above.
 The explicit request accepts only Me speech from a Mic + System recording.
 Me-only intents do not run with mic-only recordings.
 Confidence, cooldown, duplicate ranges, and a five-run meeting cap limit actions.
+These Swift rules apply to both Haiku and decision models.
+
+A decision model answers two choice questions in one request.
+The first selects an intent or `none` from the descriptions and examples.
+The second selects a committed segment ID or `none`.
+Confidence uses the probability of the selected intent label.
+Transkribe copies the selected segment text and quotes it as data for the fixed action.
+A segment outside the evaluated window cannot trigger an action.
+Both model paths reserve space for instructions and cap transcript input to the selected model's budget.
+They retain recent segments first. If the newest segment is too large, the model receives a suffix that fits.
+The action still receives the original selected segment text.
 
 Intent cards appear in the live Ask panel. **Mute for this meeting** stops that intent.
 **Dismiss** hides a card. Intent answers stream separately from typed questions.
 Clearing a meeting's chat cancels its intent actions and removes its intent cards.
 In Console, filter for subsystem `Transkribe` and category `Intents` to inspect lag records.
 Each record contains speech-end, commit, verdict, and action-dispatch times.
-The log also reports estimated input and output tokens per meeting for intent work.
-Estimates use one token per four characters because providers expose text deltas without usage counts.
+The log reports input and output tokens per meeting for intent decisions and actions.
+Decision requests use the API `usage` counts. Text streams estimate one token per four characters.
+The meeting total combines these counts and estimates.
 
 ### Routine instruction template
 
