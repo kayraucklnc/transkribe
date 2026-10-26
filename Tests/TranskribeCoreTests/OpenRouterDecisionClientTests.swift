@@ -51,6 +51,17 @@ private let intentQuestion = DecisionQuestion(type: .choice, instructions: "Sele
         #expect(usage.values == [DecisionUsage(inputTokens: 476, outputTokens: 70, cost: 0.000019992)])
     }
 
+    @Test func decisionUsageIsRecordedBeforeTheRequestReturns() async throws {
+        let usage = AsyncDecisionUsageRecorder()
+        let session = decisionSession { _ in (200, choiceResponse) }
+        defer { session.invalidateAndCancel() }
+        let client = OpenRouterDecisionClient(session: session, apiKey: { "key" }, onUsage: {
+            await usage.append($0)
+        })
+        _ = try await client.decide(model: .jev, state: "Meeting", questions: ["intent": intentQuestion])
+        #expect(await usage.values == [DecisionUsage(inputTokens: 476, outputTokens: 70, cost: 0.000019992)])
+    }
+
     @Test func rejectsAnUnknownChoiceWithoutReportingSuccessfulUsage() async {
         let usage = DecisionUsageRecorder()
         let session = decisionSession { _ in (200, choiceResponse.replacingOccurrences(of: "\"choice\":\"ask\"",
@@ -255,6 +266,14 @@ private final class DecisionUsageRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         recorded.append(usage)
+    }
+}
+
+private actor AsyncDecisionUsageRecorder {
+    private(set) var values: [DecisionUsage] = []
+
+    func append(_ usage: DecisionUsage) {
+        values.append(usage)
     }
 }
 

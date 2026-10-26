@@ -16,11 +16,11 @@ public struct OpenRouterDecisionClient: DecisionClient {
     private static let invalidResponse = AIError("OpenRouter returned an invalid decision response.")
     private let session: URLSession
     private let apiKey: @Sendable () -> String?
-    private let onUsage: @Sendable (DecisionUsage) -> Void
+    private let onUsage: @Sendable (DecisionUsage) async -> Void
 
     /// Reports usage once per successful request, across all questions.
     public init(session: URLSession = .shared, apiKey: (@Sendable () -> String?)? = nil,
-                onUsage: @escaping @Sendable (DecisionUsage) -> Void = { _ in }) {
+                onUsage: @escaping @Sendable (DecisionUsage) async -> Void = { _ in }) {
         self.session = session
         self.apiKey = apiKey ?? { KeychainStore().get(account: OpenRouterKeychain.account) }
         self.onUsage = onUsage
@@ -45,7 +45,7 @@ public struct OpenRouterDecisionClient: DecisionClient {
         guard (200..<300).contains(status) else { throw AIError(Self.httpError(status: status)) }
         let response = try Self.decode(data, questions: questions)
         try Task.checkCancellation()
-        onUsage(response.usage)
+        await onUsage(response.usage)
         return response.answers
     }
 
