@@ -51,7 +51,6 @@ extension AppModel {
         guard case .recording = recordingState, let (recorder, draft) = session else { return }
         recordingState = .stopping
         update(draft.id, persist: true) { $0.recordingEndedAt = Date() }
-        sendWebhook(.meetingEnded, for: transcript(draft.id) ?? draft)
         session = nil
         Task {
             defer {
@@ -76,18 +75,25 @@ extension AppModel {
                 } else {
                     update(id, persist: true) { $0.status = .pending }
                     processQueue()
+                    sendWebhook(.meetingEnded, for: transcript(id) ?? draft)
                 }
             } catch RecordingError.nothingRecorded {
-                live?.task.cancel()
+                let task = live?.task
+                task?.cancel()
                 live = nil
+                _ = try? await task?.value
                 if let transcript = transcript(id) { delete(transcript.id) } else { try? store.delete(draft) }
                 show(RecordingError.nothingRecorded)
+                sendWebhook(.meetingEnded, for: draft)
             } catch {
-                live?.task.cancel()
+                let task = live?.task
+                task?.cancel()
                 live = nil
+                _ = try? await task?.value
                 // Keep the audio: it is transcribed again from the saved files.
                 update(id, persist: true) { $0.status = .pending }
                 show(error)
+                sendWebhook(.meetingEnded, for: transcript(id) ?? draft)
             }
         }
     }
@@ -118,16 +124,16 @@ extension AppModel {
     }
 
     private func finishLiveTranscription(id: Transcript.ID, task: Task<Void, Error>) async {
-        do {
-            try await task.value
-        } catch {
+        await MeetingCompletion.finish(transcription: task, recover: { _ in
             // Fall back to transcribing the finished recording files from scratch.
             update(id, persist: true) { $0.status = .pending; $0.segments = [] }
             processQueue()
-        }
-        activity[id] = nil
-        liveRecordingID = nil
-        selection = id
+        }, sendEnded: {
+            activity[id] = nil
+            liveRecordingID = nil
+            selection = id
+            if let transcript = transcript(id) { sendWebhook(.meetingEnded, for: transcript) }
+        })
     }
 
     /// Called on quit: finalizes an in-progress recording so its audio isn't lost.
@@ -135,18 +141,22 @@ extension AppModel {
         guard case .recording = recordingState, let (recorder, draft) = session else { return }
         session = nil
         recordingState = .stopping
-        live?.task.cancel()
+        let task = live?.task
+        task?.cancel()
         live = nil
+        let endedAt = Date()
+        let tracks = try? await recorder.stop()
+        _ = try? await task?.value
         var transcript = self.transcript(draft.id) ?? draft
-        transcript.recordingEndedAt = Date()
-        sendWebhook(.meetingEnded, for: transcript)
-        if let tracks = try? await recorder.stop() {
+        transcript.recordingEndedAt = endedAt
+        if let tracks {
             transcript.tracks = tracks
             transcript.duration = await duration(of: transcript)
             // Picked up again on next launch; checkpoints let it continue where it stopped.
             transcript.status = .pending
             try? store.save(transcript)
         }
+        sendWebhook(.meetingEnded, for: transcript)
         recordingState = .idle
     }
 
