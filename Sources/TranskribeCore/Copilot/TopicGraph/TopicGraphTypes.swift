@@ -23,11 +23,17 @@ public enum TopicRoute: Equatable, Sendable {
 public enum TopicGraphError: Error, Equatable, LocalizedError {
     case unknownTopic
     case invalidRoute
+    case invalidPoint
+    case invalidConfidence
+    case invalidName
 
     public var errorDescription: String? {
         switch self {
         case .unknownTopic: return "The topic does not exist."
         case .invalidRoute: return "The route target is not valid for the current topic."
+        case .invalidPoint: return "A point must have a valid track and a finite, nonnegative time range."
+        case .invalidConfidence: return "The confidence must be a finite number from zero to one."
+        case .invalidName: return "The topic label must contain text."
         }
     }
 }

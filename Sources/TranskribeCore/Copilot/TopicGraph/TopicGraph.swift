@@ -7,6 +7,9 @@ private struct TopicPointKey: Hashable {
 }
 
 public struct TopicGraph: Codable, Equatable, Sendable {
+    public static let maxLabelLength = 80
+    public static let maxSummaryLength = 240
+
     public private(set) var version = 1
     public let meetingId: UUID
     public private(set) var untilSec: TimeInterval = 0
@@ -28,6 +31,12 @@ public struct TopicGraph: Codable, Equatable, Sendable {
     /// Returns the destination topic, or nil when the batch contains no new points.
     @discardableResult
     public mutating func apply(_ proposal: TopicGraphProposal) throws -> String? {
+        guard proposal.points.allSatisfy({
+            $0.track >= 0 && $0.start.isFinite && $0.end.isFinite && $0.start >= 0 && $0.end >= $0.start
+        }) else { throw TopicGraphError.invalidPoint }
+        if let confidence = proposal.confidence, !confidence.isFinite || !(0...1).contains(confidence) {
+            throw TopicGraphError.invalidConfidence
+        }
         var seen = Set(points.map { TopicPointKey(track: $0.track, start: $0.start, end: $0.end) })
         let incoming = proposal.points.filter {
             seen.insert(TopicPointKey(track: $0.track, start: $0.start, end: $0.end)).inserted
@@ -57,6 +66,14 @@ public struct TopicGraph: Codable, Equatable, Sendable {
         return topicId
     }
 
+    public mutating func setName(topicId: String, label: String, summary: String) throws {
+        guard let index = topics.firstIndex(where: { $0.id == topicId }) else { throw TopicGraphError.unknownTopic }
+        let label = Self.singleLine(label, limit: Self.maxLabelLength)
+        guard !label.isEmpty else { throw TopicGraphError.invalidName }
+        topics[index].label = label
+        topics[index].summary = Self.singleLine(summary, limit: Self.maxSummaryLength)
+    }
+
     private mutating func destination(for route: TopicRoute, first: TopicPointInput) throws -> (Int, TopicEdgeType?) {
         let current = topics.firstIndex { $0.id == currentTopicId }
         switch route {
@@ -83,8 +100,13 @@ public struct TopicGraph: Codable, Equatable, Sendable {
     }
 
     private mutating func openTopic(first: TopicPointInput, parentId: String? = nil) -> Int {
-        topics.append(.init(id: UUID().uuidString, label: first.text, summary: "", status: .open,
+        let label = Self.singleLine(first.text, limit: Self.maxLabelLength)
+        topics.append(.init(id: UUID().uuidString, label: label.isEmpty ? "Topic" : label, summary: "", status: .open,
                             parentId: parentId, firstSec: first.start, lastSec: first.end, totalSec: 0))
         return topics.count - 1
+    }
+
+    private static func singleLine(_ text: String, limit: Int) -> String {
+        String(text.split(whereSeparator: \.isWhitespace).joined(separator: " ").prefix(limit))
     }
 }

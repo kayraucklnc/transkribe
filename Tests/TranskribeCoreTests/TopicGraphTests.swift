@@ -114,6 +114,50 @@ import Testing
         #expect(graph == afterShift)
     }
 
+    @Test func invalidPointsOrConfidenceRejectTheWholeProposal() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        try graph.apply(batch(.new, start: 10))
+        let before = graph
+        let invalid: [TopicPointInput] = [
+            .init(track: -1, start: 1, end: 2, text: "Invalid track"),
+            .init(track: 0, start: -1, end: 2, text: "Negative time"),
+            .init(track: 0, start: 3, end: 2, text: "Reversed range"),
+            .init(track: 0, start: .nan, end: 2, text: "Invalid start"),
+            .init(track: 0, start: 1, end: .infinity, text: "Invalid end"),
+        ]
+        for point in invalid {
+            #expect(throws: (any Error).self) {
+                try graph.apply(.init(route: .new, points: [
+                    .init(track: 0, start: 20, end: 21, text: "Valid"), point,
+                ]))
+            }
+            #expect(graph == before)
+        }
+        for confidence in [-0.1, 1.1, Double.nan, Double.infinity] {
+            #expect(throws: (any Error).self) { try graph.apply(batch(.new, start: 30, confidence: confidence)) }
+            #expect(graph == before)
+        }
+    }
+
+    @Test func topicNamesUseOneLineAndCapUnicodeCharacterLengths() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        let topicId = try #require(try graph.apply(.init(route: .new, points: [
+            .init(track: 0, start: 0, end: 1, text: String(repeating: "👩🏽‍💻", count: 100)),
+        ])))
+        #expect(graph.topics.first?.label.count == 80)
+        try graph.setName(topicId: topicId, label: String(repeating: "é", count: 100),
+                          summary: String(repeating: "👩🏽‍💻", count: 300))
+        #expect(graph.topics.first?.label == String(repeating: "é", count: 80))
+        #expect(graph.topics.first?.summary == String(repeating: "👩🏽‍💻", count: 240))
+        try graph.setName(topicId: topicId, label: "  Pricing\n options  ", summary: " One\tline. ")
+        #expect(graph.topics.first?.label == "Pricing options")
+        #expect(graph.topics.first?.summary == "One line.")
+        let before = graph
+        #expect(throws: (any Error).self) { try graph.setName(topicId: topicId, label: " \n ", summary: "") }
+        #expect(throws: (any Error).self) { try graph.setName(topicId: "missing", label: "Name", summary: "") }
+        #expect(graph == before)
+    }
+
     private func batch(_ route: TopicRoute, start: TimeInterval, confidence: Double? = nil) -> TopicGraphProposal {
         .init(route: route, points: [.init(track: 0, start: start, end: start + 2, text: "Topic at \(start)")],
               confidence: confidence)
