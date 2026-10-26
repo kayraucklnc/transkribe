@@ -74,6 +74,19 @@ public struct TopicGraph: Codable, Equatable, Sendable {
         topics[index].summary = Self.singleLine(summary, limit: Self.maxSummaryLength)
     }
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        guard version == 1 else { throw TopicGraphError.unsupportedVersion }
+        meetingId = try container.decode(UUID.self, forKey: .meetingId)
+        untilSec = try container.decode(TimeInterval.self, forKey: .untilSec)
+        currentTopicId = try container.decodeIfPresent(String.self, forKey: .currentTopicId)
+        topics = try container.decode([TopicGraphTopic].self, forKey: .topics)
+        points = try container.decode([TopicGraphPoint].self, forKey: .points)
+        edges = try container.decode([TopicGraphEdge].self, forKey: .edges)
+        try validate()
+    }
+
     private mutating func destination(for route: TopicRoute, first: TopicPointInput) throws -> (Int, TopicEdgeType?) {
         let current = topics.firstIndex { $0.id == currentTopicId }
         switch route {
@@ -108,5 +121,61 @@ public struct TopicGraph: Codable, Equatable, Sendable {
 
     private static func singleLine(_ text: String, limit: Int) -> String {
         String(text.split(whereSeparator: \.isWhitespace).joined(separator: " ").prefix(limit))
+    }
+
+    private func validate() throws {
+        guard untilSec.isFinite, untilSec >= 0,
+              Set(topics.map(\.id)).count == topics.count,
+              Set(points.map(\.id)).count == points.count,
+              Set(edges.map(\.id)).count == edges.count,
+              topics.allSatisfy({ !$0.id.isEmpty }),
+              points.allSatisfy({ !$0.id.isEmpty }),
+              edges.allSatisfy({ !$0.id.isEmpty }),
+              topics.isEmpty == (currentTopicId == nil) else { throw TopicGraphError.invalidGraph }
+        let indices = Dictionary(uniqueKeysWithValues: topics.enumerated().map { ($0.element.id, $0.offset) })
+        if let currentTopicId, indices[currentTopicId] == nil { throw TopicGraphError.invalidGraph }
+        var ranges = Set<TopicPointKey>()
+        for point in points {
+            guard indices[point.topicId] != nil, point.track >= 0,
+                  point.start.isFinite, point.end.isFinite, point.start >= 0,
+                  point.end >= point.start, untilSec >= point.end,
+                  ranges.insert(.init(track: point.track, start: point.start, end: point.end)).inserted
+            else { throw TopicGraphError.invalidGraph }
+        }
+        let grouped = Dictionary(grouping: points, by: \.topicId)
+        for (index, topic) in topics.enumerated() {
+            if let parent = topic.parentId {
+                guard let parentIndex = indices[parent], parentIndex < index else { throw TopicGraphError.invalidGraph }
+            }
+            guard !topic.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  topic.label.count <= Self.maxLabelLength, topic.summary.count <= Self.maxSummaryLength,
+                  topic.firstSec.isFinite, topic.lastSec.isFinite, topic.totalSec.isFinite,
+                  let topicPoints = grouped[topic.id],
+                  topic.firstSec == topicPoints.map(\.start).min(),
+                  topic.lastSec == topicPoints.map(\.end).max() else { throw TopicGraphError.invalidGraph }
+            let total = topicPoints.reduce(0) { $0 + ($1.end - $1.start) }
+            guard total.isFinite, abs(total - topic.totalSec) <= max(1, total) * 1e-9
+            else { throw TopicGraphError.invalidGraph }
+        }
+        let pointsById = Dictionary(uniqueKeysWithValues: points.map { ($0.id, $0) })
+        for edge in edges {
+            guard let from = indices[edge.from], let to = indices[edge.to], from != to,
+                  let point = pointsById[edge.pointId], point.topicId == edge.to, edge.atSec == point.start
+            else { throw TopicGraphError.invalidGraph }
+            if let confidence = edge.confidence, !confidence.isFinite || !(0...1).contains(confidence) {
+                throw TopicGraphError.invalidGraph
+            }
+            switch edge.type {
+            case .shift:
+                guard to > from, topics[to].parentId == nil else { throw TopicGraphError.invalidGraph }
+            case .return:
+                guard to < from else { throw TopicGraphError.invalidGraph }
+            case .branch:
+                guard to > from, topics[to].parentId == edge.from else { throw TopicGraphError.invalidGraph }
+            case .merge:
+                guard topics[from].parentId != nil, edge.to == topics[from].parentId || to < from
+                else { throw TopicGraphError.invalidGraph }
+            }
+        }
     }
 }

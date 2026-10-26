@@ -26,6 +26,8 @@ public enum TopicGraphError: Error, Equatable, LocalizedError {
     case invalidPoint
     case invalidConfidence
     case invalidName
+    case unsupportedVersion
+    case invalidGraph
 
     public var errorDescription: String? {
         switch self {
@@ -34,6 +36,8 @@ public enum TopicGraphError: Error, Equatable, LocalizedError {
         case .invalidPoint: return "A point must have a valid track and a finite, nonnegative time range."
         case .invalidConfidence: return "The confidence must be a finite number from zero to one."
         case .invalidName: return "The topic label must contain text."
+        case .unsupportedVersion: return "The topic graph version is not supported."
+        case .invalidGraph: return "The topic graph contains invalid data."
         }
     }
 }
