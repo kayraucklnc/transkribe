@@ -31,6 +31,34 @@ public struct TopicGraph: Codable, Equatable, Sendable {
     /// Returns the destination topic, or nil when the batch contains no new points.
     @discardableResult
     public mutating func apply(_ proposal: TopicGraphProposal) throws -> String? {
+        var updated = self
+        let topicId = try updated.commit(proposal)
+        self = updated
+        return topicId
+    }
+
+    public mutating func setName(topicId: String, label: String, summary: String) throws {
+        guard let index = topics.firstIndex(where: { $0.id == topicId }) else { throw TopicGraphError.unknownTopic }
+        let label = Self.singleLine(label, limit: Self.maxLabelLength)
+        guard !label.isEmpty else { throw TopicGraphError.invalidName }
+        topics[index].label = label
+        topics[index].summary = Self.singleLine(summary, limit: Self.maxSummaryLength)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        guard version == 1 else { throw TopicGraphError.unsupportedVersion }
+        meetingId = try container.decode(UUID.self, forKey: .meetingId)
+        untilSec = try container.decode(TimeInterval.self, forKey: .untilSec)
+        currentTopicId = try container.decodeIfPresent(String.self, forKey: .currentTopicId)
+        topics = try container.decode([TopicGraphTopic].self, forKey: .topics)
+        points = try container.decode([TopicGraphPoint].self, forKey: .points)
+        edges = try container.decode([TopicGraphEdge].self, forKey: .edges)
+        try validate()
+    }
+
+    private mutating func commit(_ proposal: TopicGraphProposal) throws -> String? {
         guard proposal.points.allSatisfy({
             $0.track >= 0 && $0.start.isFinite && $0.end.isFinite && $0.start >= 0 && $0.end >= $0.start
         }) else { throw TopicGraphError.invalidPoint }
@@ -56,6 +84,7 @@ public struct TopicGraph: Codable, Equatable, Sendable {
             topics[index].firstSec = min(topics[index].firstSec, point.start)
             topics[index].lastSec = max(topics[index].lastSec, point.end)
             topics[index].totalSec += point.end - point.start
+            guard topics[index].totalSec.isFinite else { throw TopicGraphError.invalidGraph }
             untilSec = max(untilSec, point.end)
         }
         if let previous, let edgeType {
@@ -64,27 +93,6 @@ public struct TopicGraph: Codable, Equatable, Sendable {
                                atSec: first.start, pointId: firstPointId, confidence: proposal.confidence))
         }
         return topicId
-    }
-
-    public mutating func setName(topicId: String, label: String, summary: String) throws {
-        guard let index = topics.firstIndex(where: { $0.id == topicId }) else { throw TopicGraphError.unknownTopic }
-        let label = Self.singleLine(label, limit: Self.maxLabelLength)
-        guard !label.isEmpty else { throw TopicGraphError.invalidName }
-        topics[index].label = label
-        topics[index].summary = Self.singleLine(summary, limit: Self.maxSummaryLength)
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        version = try container.decode(Int.self, forKey: .version)
-        guard version == 1 else { throw TopicGraphError.unsupportedVersion }
-        meetingId = try container.decode(UUID.self, forKey: .meetingId)
-        untilSec = try container.decode(TimeInterval.self, forKey: .untilSec)
-        currentTopicId = try container.decodeIfPresent(String.self, forKey: .currentTopicId)
-        topics = try container.decode([TopicGraphTopic].self, forKey: .topics)
-        points = try container.decode([TopicGraphPoint].self, forKey: .points)
-        edges = try container.decode([TopicGraphEdge].self, forKey: .edges)
-        try validate()
     }
 
     private mutating func destination(for route: TopicRoute, first: TopicPointInput) throws -> (Int, TopicEdgeType?) {

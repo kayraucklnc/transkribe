@@ -158,6 +158,38 @@ import Testing
         #expect(graph == before)
     }
 
+    @Test func continuationUpdatesCurrentTopicWithoutAddingAnEdge() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        let topicId = try #require(try graph.apply(batch(.new, start: 10)))
+        try graph.apply(.init(route: .continue, points: [
+            .init(track: 0, start: 1, end: 4, text: "Earlier committed range"),
+            .init(track: 1, start: 20, end: 25, text: "Later committed range"),
+        ]))
+        #expect(graph.currentTopicId == topicId)
+        #expect(graph.topics.count == 1)
+        #expect(graph.points.count == 3)
+        #expect(graph.edges.isEmpty)
+        #expect(graph.topics.first?.firstSec == 1)
+        #expect(graph.topics.first?.lastSec == 25)
+        #expect(graph.topics.first?.totalSec == 10)
+        #expect(graph.untilSec == 25)
+    }
+
+    @Test func overflowingDurationRejectsTheWholeProposal() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        try graph.apply(batch(.new, start: 10))
+        let before = graph
+        for route: TopicRoute in [.continue, .new] {
+            #expect(throws: (any Error).self) {
+                try graph.apply(.init(route: route, points: [
+                    .init(track: 0, start: 0, end: .greatestFiniteMagnitude, text: "First"),
+                    .init(track: 1, start: 0, end: .greatestFiniteMagnitude, text: "Second"),
+                ]))
+            }
+            #expect(graph == before)
+        }
+    }
+
     private func batch(_ route: TopicRoute, start: TimeInterval, confidence: Double? = nil) -> TopicGraphProposal {
         .init(route: route, points: [.init(track: 0, start: start, end: start + 2, text: "Topic at \(start)")],
               confidence: confidence)
