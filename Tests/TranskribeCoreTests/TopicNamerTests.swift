@@ -85,4 +85,25 @@ import Testing
         #expect(graph == original)
         #expect(provider.calls.count == 1)
     }
+
+    @Test func capsNamesAndNormalizesWhitespaceBeforeReturningThem() async throws {
+        let reply = String(decoding: try JSONEncoder().encode([
+            "label": " \n" + String(repeating: "🚀", count: 90) + "\t",
+            "summary": "  First\n line  " + String(repeating: "é", count: 260),
+        ]), as: UTF8.self)
+        let provider = FakeAIProvider(budget: 100_000) { _ in reply }
+        let namer = TopicNamer(provider: provider, model: provider.models[0])
+        var graph = TopicGraph(meetingId: UUID())
+        let topicId = try #require(try graph.apply(.init(route: .new, points: [
+            .init(track: 0, start: 0, end: 1, text: "Launch"),
+        ])))
+
+        let name = try #require(try await namer.name(topicId: topicId, in: graph))
+
+        #expect(name.label == String(repeating: "🚀", count: 80))
+        #expect(name.summary == "First line " + String(repeating: "é", count: 229))
+        try graph.setName(topicId: topicId, label: name.label, summary: name.summary)
+        #expect(graph.topics.first?.label == name.label)
+        #expect(graph.topics.first?.summary == name.summary)
+    }
 }

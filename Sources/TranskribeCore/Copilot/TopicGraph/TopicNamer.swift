@@ -44,6 +44,11 @@ public actor TopicNamer {
               !name.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AIError("The topic namer received an empty label or summary.")
         }
-        return name
+        return TopicName(label: Self.singleLine(name.label, limit: TopicGraph.maxLabelLength),
+                         summary: Self.singleLine(name.summary, limit: TopicGraph.maxSummaryLength))
+    }
+
+    private static func singleLine(_ text: String, limit: Int) -> String {
+        String(text.split(whereSeparator: \.isWhitespace).joined(separator: " ").prefix(limit))
     }
 }
