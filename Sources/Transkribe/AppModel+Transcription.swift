@@ -174,6 +174,10 @@ extension AppModel {
     private func pipelineDidUpdate(id: Transcript.ID, track: AudioTrack, index: Int, update progressUpdate: LiveTrackProgress,
                                    progress: PipelineProgress, isLive: Bool) {
         guard let transcript = self.transcript(id) else { return }
+        if isLive {
+            let offset = transcript.tracks.first { $0.fileName == track.fileName }?.offset ?? track.offset
+            topicGraphs[id]?.receive(progressUpdate, track: index, offset: offset)
+        }
         // Live: the call side's lines so far (already merged on the shared clock).
         let callSpeech = transcript.segments.filter { !SpeakerID.isOnMicrophone($0.speaker) }
             .map { (start: $0.start - track.offset, end: $0.end - track.offset) }

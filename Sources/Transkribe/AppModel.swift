@@ -92,6 +92,7 @@ final class AppModel {
     var live: (task: Task<Void, Error>, sources: [LiveAudioSource])?
     /// The transcript being recorded right now, shown live.
     var liveRecordingID: Transcript.ID?
+    var topicGraphs: [Transcript.ID: LiveTopicGraphController] = [:]
     var startFailure: Error?
     var queueTask: Task<Void, Never>?
     var transcribingID: Transcript.ID?
@@ -283,6 +284,14 @@ final class AppModel {
 
     func delete(_ id: Transcript.ID) {
         guard let transcript = transcript(id) else { return }
+        if let controller = topicGraphs[id] {
+            Task {
+                await controller.discard()
+                topicGraphs[id] = nil
+                delete(id)
+            }
+            return
+        }
         do {
             try store.delete(transcript)
         } catch {
