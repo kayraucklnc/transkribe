@@ -1,5 +1,6 @@
 import Foundation
 
+/// Coordinates start at the top left of the canvas.
 public struct TopicGraphLayout: Equatable, Sendable {
     public static let cardSize = CGSize(width: 240, height: 140)
     public static let columnGap: CGFloat = 48
@@ -17,11 +18,19 @@ public struct TopicGraphLayout: Equatable, Sendable {
         public let from: String
         public let to: String
         public let type: TopicEdgeType
+        /// The vertices follow the edge from the source card to the destination card.
         public let waypoints: [CGPoint]
+    }
+
+    public struct DraftCard: Equatable, Sendable {
+        public let topicId: String?
+        public let frame: CGRect
+        public let row: Int
     }
 
     public let cards: [Card]
     public let edges: [Edge]
+    public let draftCard: DraftCard?
     public let size: CGSize
 
     public init(graph: TopicGraph) {
@@ -30,8 +39,8 @@ public struct TopicGraphLayout: Equatable, Sendable {
                 return $0.element.firstSec < $1.element.firstSec
             }
             return $0.offset < $1.offset
-        }
-        let columns = Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($0.element.element.id, $0.offset) })
+        }.map(\.element)
+        let columns = Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($0.element.id, $0.offset) })
         var byId: [String: Card] = [:]
         var nextRow = 1
         for topic in graph.topics {
@@ -44,16 +53,28 @@ public struct TopicGraphLayout: Equatable, Sendable {
                                width: Self.cardSize.width, height: Self.cardSize.height)
             byId[topic.id] = Card(id: topic.id, frame: frame, row: row)
         }
-        cards = ordered.compactMap { byId[$0.element.id] }
+        cards = ordered.compactMap { byId[$0.id] }
         edges = graph.edges.compactMap { edge in
             guard let source = byId[edge.from], let target = byId[edge.to] else { return nil }
             return Edge(id: edge.id, from: edge.from, to: edge.to, type: edge.type,
                         waypoints: Self.path(from: source.frame, to: target.frame, type: edge.type))
         }
+        if graph.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draftCard = nil
+        } else {
+            let current = graph.currentTopicId.flatMap { byId[$0] }
+            let row = current?.row ?? 0
+            let lastX = cards.filter { $0.row == row }.map(\.frame.maxX).max()
+            let frame = CGRect(x: lastX.map { $0 + Self.columnGap } ?? Self.padding,
+                               y: Self.padding + CGFloat(row) * (Self.cardSize.height + Self.rowGap),
+                               width: Self.cardSize.width, height: Self.cardSize.height)
+            draftCard = DraftCard(topicId: current?.id, frame: frame, row: row)
+        }
+        let frames = cards.map(\.frame) + (draftCard.map { [$0.frame] } ?? [])
         let pathPoints = edges.flatMap(\.waypoints)
-        size = cards.isEmpty ? .zero : CGSize(
-            width: max(cards.map(\.frame.maxX).max() ?? 0, pathPoints.map(\.x).max() ?? 0) + Self.padding,
-            height: max(cards.map(\.frame.maxY).max() ?? 0, pathPoints.map(\.y).max() ?? 0) + Self.padding)
+        size = frames.isEmpty ? .zero : CGSize(
+            width: max(frames.map(\.maxX).max() ?? 0, pathPoints.map(\.x).max() ?? 0) + Self.padding,
+            height: max(frames.map(\.maxY).max() ?? 0, pathPoints.map(\.y).max() ?? 0) + Self.padding)
     }
 
     private static func path(from source: CGRect, to target: CGRect, type: TopicEdgeType) -> [CGPoint] {

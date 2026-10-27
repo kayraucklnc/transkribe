@@ -107,6 +107,97 @@ import Testing
         }
     }
 
+    @Test(arguments: [false, true])
+    func draftFollowsTheEndOfTheCurrentRow(afterReturn: Bool) throws {
+        var graph = TopicGraph(meetingId: UUID())
+        let first = try add(.new, at: 0, to: &graph)
+        let second = try add(.new, at: 10, to: &graph)
+        try add(.side(second), at: 20, to: &graph)
+        if afterReturn { try add(.returnTo(first), at: 30, to: &graph) }
+        graph.draft = "Pending words"
+
+        let layout = TopicGraphLayout(graph: graph)
+        let draft = try #require(layout.draftCard)
+
+        #expect(draft.topicId == graph.currentTopicId)
+        #expect(draft.row == (afterReturn ? 0 : 1))
+        #expect(draft.frame == CGRect(x: afterReturn ? 608 : 896, y: afterReturn ? 32 : 236,
+                                      width: 240, height: 140))
+        #expect(layout.cards.count == 3)
+        #expect(layout.cards.allSatisfy { !draft.frame.intersects($0.frame) })
+        #expect(layout.size.width > draft.frame.maxX)
+        #expect(layout.size.height > draft.frame.maxY)
+    }
+
+    @Test func emptyGraphShowsOnlyANonemptyDraft() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        for text in ["", " \n\t"] {
+            graph.draft = text
+            let layout = TopicGraphLayout(graph: graph)
+            #expect(layout.cards.isEmpty)
+            #expect(layout.edges.isEmpty)
+            #expect(layout.draftCard == nil)
+            #expect(layout.size == .zero)
+        }
+
+        graph.draft = "The first pending words"
+        let layout = TopicGraphLayout(graph: graph)
+        let draft = try #require(layout.draftCard)
+        #expect(draft.topicId == nil)
+        #expect(draft.row == 0)
+        #expect(draft.frame == CGRect(x: 32, y: 32, width: 240, height: 140))
+        #expect(layout.size == CGSize(width: 304, height: 204))
+    }
+
+    @Test func meetingOffsetsOrderTopicsAndEqualTimesKeepCreationOrder() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        let first = try add(.new, at: 0, to: &graph)
+        let second = try #require(try graph.apply(.init(route: .new, points: [
+            .init(track: 1, start: 0, end: 1, text: "System audio"),
+        ])))
+        #expect(TopicGraphLayout(graph: graph).cards.map(\.id) == [first, second])
+
+        try graph.reconcileTimeline(trackOffsets: [0: 60, 1: 0],
+                                    meetingStartedAt: Date(timeIntervalSince1970: 1_000))
+
+        #expect(TopicGraphLayout(graph: graph).cards.map(\.id) == [second, first])
+    }
+
+    @Test func repeatedAndReloadedGraphsGiveTheSameLayout() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        let first = try add(.new, at: 0, to: &graph)
+        let second = try add(.new, at: 10, to: &graph)
+        try add(.side(second), at: 20, to: &graph)
+        try add(.returnTo(first), at: 30, to: &graph)
+        try add(.side(first), at: 40, to: &graph)
+        try add(.merge(first), at: 50, to: &graph)
+        graph.draft = "Still speaking"
+        let layout = TopicGraphLayout(graph: graph)
+
+        for _ in 0..<10 {
+            #expect(TopicGraphLayout(graph: graph) == layout)
+        }
+        var restored = try JSONDecoder().decode(TopicGraph.self, from: JSONEncoder().encode(graph))
+        restored.draft = graph.draft
+        #expect(TopicGraphLayout(graph: restored) == layout)
+    }
+
+    @Test func threeHundredPointsTakeLessThanFiftyMilliseconds() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        for index in 0..<300 {
+            try add(.new, at: Double(index * 10), to: &graph)
+        }
+        let start = ContinuousClock.now
+        let layout = TopicGraphLayout(graph: graph)
+        let elapsed = start.duration(to: .now)
+
+        #expect(graph.points.count == 300)
+        #expect(layout.cards.count == 300)
+        #expect(layout.edges.count == 299)
+        #expect(elapsed < .milliseconds(50))
+        print("300-point layout duration: \(elapsed)")
+    }
+
     private func add(_ route: TopicRoute, at start: Double, to graph: inout TopicGraph) throws -> String {
         try #require(try graph.apply(.init(route: route, points: [
             .init(track: 0, start: start, end: start + 1, text: "Topic at \(start)"),
