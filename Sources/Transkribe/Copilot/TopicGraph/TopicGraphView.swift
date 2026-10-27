@@ -59,6 +59,23 @@ struct TopicGraphView: View {
     }
 
     private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                heading
+                Spacer()
+                lagChip
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                heading
+                lagChip
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+    }
+
+    private var heading: some View {
         HStack(spacing: 10) {
             Image(systemName: "point.3.connected.trianglepath.dotted")
                 .foregroundStyle(Color.accentColor)
@@ -68,18 +85,18 @@ struct TopicGraphView: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Theme.record)
             }
-            Spacer()
-            let lag = graph?.lagRecords.last { $0.namedAt != nil }?.namedLag
-            Text(lag.map { String(format: "Speech → named %.1f s", $0) } ?? "Speech → named —")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Theme.card, in: Capsule())
-                .help("The latest batch with a valid topic name. Batches without a name are excluded.")
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+    }
+
+    private var lagChip: some View {
+        let lag = graph?.lagRecords.last { $0.namedAt != nil }?.namedLag
+        return Text(lag.map { String(format: "Speech → named %.1f s", $0) } ?? "Speech → named —")
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Theme.card, in: Capsule())
+            .help("The latest batch with a valid topic name. Batches without a name are excluded.")
     }
 
     private var emptyMessage: String {

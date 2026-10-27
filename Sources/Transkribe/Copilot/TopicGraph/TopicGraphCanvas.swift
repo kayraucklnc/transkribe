@@ -34,9 +34,14 @@ struct TopicGraphCanvas: View {
                     }
                 }
                 HStack(spacing: 16) {
-                    Label("Shift", systemImage: "arrow.right")
-                    Label("Side topic", systemImage: "arrow.turn.down.right")
-                    Label("Return / merge", systemImage: "arrow.uturn.backward")
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 16) {
+                            Label("Shift", systemImage: "arrow.right")
+                            Label("Side topic", systemImage: "arrow.turn.down.right")
+                            Label("Return / merge", systemImage: "arrow.uturn.backward")
+                        }
+                        Text("Scroll to explore")
+                    }
                     Spacer(minLength: 0)
                     Button(isLive ? "Current topic" : "Latest topic") {
                         if let id = scene.graph.currentTopicId {
