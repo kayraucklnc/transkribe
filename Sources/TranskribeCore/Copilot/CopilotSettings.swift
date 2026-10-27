@@ -7,6 +7,8 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
     public var mcpPort: UInt16
     public var mcpReadScopeDays: Int
     public var webhook: URL?
+    public var topicGraph: Bool
+    public var topicGraphSettings: TopicGraphSettings
 
     public static let `default` = CopilotSettings()
     private static let key = "copilotSettings"
@@ -18,16 +20,21 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         case mcpPort
         case mcpReadScopeDays
         case webhook
+        case topicGraph
+        case topicGraphSettings
     }
 
     public init(fastLiveWindow: Bool = false, askWhileLive: Bool = false, mcpServer: Bool = false,
-                mcpPort: UInt16 = 7788, mcpReadScopeDays: Int = 7, webhook: URL? = nil) {
+                mcpPort: UInt16 = 7788, mcpReadScopeDays: Int = 7, webhook: URL? = nil,
+                topicGraph: Bool = false, topicGraphSettings: TopicGraphSettings = .default) {
         self.fastLiveWindow = fastLiveWindow
         self.askWhileLive = askWhileLive
         self.mcpServer = mcpServer
         self.mcpPort = mcpPort
         self.mcpReadScopeDays = mcpReadScopeDays
         self.webhook = webhook
+        self.topicGraph = topicGraph
+        self.topicGraphSettings = topicGraphSettings
     }
 
     public init(from decoder: Decoder) throws {
@@ -38,6 +45,8 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         mcpPort = try values.decodeIfPresent(UInt16.self, forKey: .mcpPort) ?? 7788
         mcpReadScopeDays = try values.decodeIfPresent(Int.self, forKey: .mcpReadScopeDays) ?? 7
         webhook = try values.decodeIfPresent(URL.self, forKey: .webhook)
+        topicGraph = try values.decodeIfPresent(Bool.self, forKey: .topicGraph) ?? false
+        topicGraphSettings = try values.decodeIfPresent(TopicGraphSettings.self, forKey: .topicGraphSettings) ?? .default
     }
 
     public static func load(from defaults: UserDefaults = .standard) -> CopilotSettings {

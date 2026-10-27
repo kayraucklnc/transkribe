@@ -41,6 +41,20 @@ Enable **Ask while recording** in Settings → AI to ask questions during a reco
 
 Add an xAI key in Settings → AI to select Grok for streamed answers with web and X search. Selecting Grok sends the transcript and questions to xAI. Transkribe stores the key in Keychain. Transkribe never selects Grok as an automatic fallback.
 
+Add an OpenRouter key in Settings → AI to select Grok 4.3, Claude Haiku 5.5, or GPT-6 Luna for streamed Ask answers. Transkribe stores this key in Keychain under `openrouter-api-key`. Selecting an OpenRouter model sends transcript text and questions to OpenRouter and the model provider. Without the key, OpenRouter is unavailable and the app keeps your selection. Transkribe never selects OpenRouter as an automatic fallback.
+
+Settings → AI → Topic graph stores a separate enable switch, decision model, naming model, and name refresh interval. The graph is off by default. The defaults are Jev Latest for decisions, GPT-6 Luna for names, and 60 committed words between name updates. These settings require the OpenRouter key. Missing keys and unavailable model selections never cause a switch to another model.
+
+Meetings started with the graph enabled update an in-memory draft with pending text. Committed text goes through routing and naming, one request at a time. The app saves `graph.json` beside `transcript.json` during the meeting and after the final batch. A provider error stops the graph for that meeting and displays a notice. With the graph disabled, the app creates no controller and no graph file.
+
+Use the Topic graph toolbar toggle in a conversation to switch between the transcript and graph. Cards show topic names, time spans, point counts, and question, decision, and action badges. The current topic has an accent border. Pending speech appears in a faded draft card. Scroll in either direction to explore larger graphs. The Current topic button returns to the active card. Finished meetings open their saved `graph.json`.
+
+Hover over a topic to highlight its direct neighbours and connecting edges. Other topics and edges fade. Select a card to open its summary, time span, and points with speaker names and kinds. Select a point or Go to start to show that moment in the transcript. For a finished meeting, this also seeks the audio player. Jump times include each track's offset.
+
+Each routed batch stores its speech-end, commit, routing, and optional naming timestamps in `graph.json`. At meeting end, the log reports median and p90 for STT lag (speech → commit) and graph lag (speech → routed). Both use all routed batches. Speech → named statistics use only batches with valid names. The lag chip shows the latest valid naming sample and excludes unnamed batches.
+
+Median averages the middle pair. P90 uses nearest rank. Point keys stay in track time. Topic spans, edges, and lag use meeting time, with provisional capture timing corrected when recording ends.
+
 **Many languages.** Whisper handles almost any language; Parakeet is used for European languages where it is faster and more accurate. Pick the languages you speak and each stretch of audio is locked to one of them, which avoids misdetections and repetition loops. Search ignores accents, and Turkish ı/İ just works.
 
 ![A Turkish conversation](docs/screenshots/turkish.png)

@@ -221,6 +221,7 @@ private struct AISettingsTab: View {
             } footer: {
                 Text("Answers use the transcript so far and the selected model. This option is off by default.")
             }
+            TopicGraphSettingsSection()
             MCPServerSettings()
             WebhookSettings()
             SwiftUI.Section("AI model") {
@@ -296,6 +297,7 @@ private struct AISettingsTab: View {
             } footer: {
                 Text("Selecting Grok sends the transcript and questions to xAI. Grok can search the web and X. Transkribe stores the key in Keychain.")
             }
+            OpenRouterKeySettings()
         }
         .formStyle(.grouped)
         .task { await ai.refreshAvailability() }
