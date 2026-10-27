@@ -46,9 +46,12 @@ public struct TopicRouter: Sendable {
         }, recentPoints: Array(graph.points.filter { $0.topicId == graph.currentTopicId }.suffix(8)),
            segments: segments.map(Segment.init))
         let data = try JSONEncoder().encode(state)
+        let json = String(decoding: data, as: UTF8.self)
+            .replacingOccurrences(of: "<", with: "\\u003C")
+            .replacingOccurrences(of: ">", with: "\\u003E")
         let questions = questions(in: graph)
         let answers = try await client.decide(model: model,
-            state: "<topic_graph_data>\n\(String(decoding: data, as: UTF8.self))\n</topic_graph_data>",
+            state: "<topic_graph_data>\n\(json)\n</topic_graph_data>",
             questions: questions)
         guard Set(answers.keys) == Set(questions.keys),
               let routeAnswer = answers["route"], routeAnswer.type == .choice,
