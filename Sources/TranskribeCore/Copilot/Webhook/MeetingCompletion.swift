@@ -12,4 +12,11 @@ public enum MeetingCompletion {
         }
         sendEnded()
     }
+
+    /// Cancel transcription and finalize at once, without waiting for the cancelled task to end.
+    @MainActor
+    public static func abandon(transcription: Task<Void, Error>?, finalize: () async -> Void) async {
+        transcription?.cancel()
+        await finalize()
+    }
 }

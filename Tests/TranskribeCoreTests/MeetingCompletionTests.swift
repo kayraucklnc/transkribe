@@ -42,4 +42,22 @@ import Testing
         })
         #expect(notifications == 1)
     }
+
+    @Test @MainActor func abandonCancelsAndFinalizesWithoutWaitingForTheTranscription() async {
+        let gate = TranscriptionGate()
+        let transcription = Task<Void, Error> { @MainActor in
+            await withCheckedContinuation { gate.continuation = $0 }
+        }
+        while gate.continuation == nil { await Task.yield() }
+        var finalized = 0
+        await MeetingCompletion.abandon(transcription: transcription, finalize: { finalized += 1 })
+        #expect(finalized == 1)
+        #expect(transcription.isCancelled)
+        gate.continuation?.resume()
+        _ = await transcription.result
+    }
+}
+
+@MainActor private final class TranscriptionGate {
+    var continuation: CheckedContinuation<Void, Never>?
 }

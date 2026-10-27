@@ -80,19 +80,19 @@ extension AppModel {
                 }
             } catch RecordingError.nothingRecorded {
                 let task = live?.task
-                task?.cancel()
                 live = nil
-                _ = try? await task?.value
-                await finishTopicGraph(for: id, startedAt: recorder.startedAt)
+                await MeetingCompletion.abandon(transcription: task) {
+                    await finishTopicGraph(for: id, startedAt: recorder.startedAt)
+                }
                 if let transcript = transcript(id) { delete(transcript.id) } else { try? store.delete(draft) }
                 show(RecordingError.nothingRecorded)
                 sendWebhook(.meetingEnded, for: draft)
             } catch {
                 let task = live?.task
-                task?.cancel()
                 live = nil
-                _ = try? await task?.value
-                await finishTopicGraph(for: id, startedAt: recorder.startedAt)
+                await MeetingCompletion.abandon(transcription: task) {
+                    await finishTopicGraph(for: id, startedAt: recorder.startedAt)
+                }
                 // Keep the audio: it is transcribed again from the saved files.
                 update(id, persist: true) { $0.status = .pending }
                 show(error)
@@ -151,22 +151,23 @@ extension AppModel {
         session = nil
         recordingState = .stopping
         let task = live?.task
-        task?.cancel()
         live = nil
-        let endedAt = Date()
-        let tracks = try? await recorder.stop()
-        _ = try? await task?.value
-        var transcript = self.transcript(draft.id) ?? draft
-        transcript.recordingEndedAt = endedAt
-        if let tracks {
-            transcript.tracks = tracks
-            transcript.duration = await duration(of: transcript)
-            // Picked up again on next launch; checkpoints let it continue where it stopped.
-            transcript.status = .pending
-            try? store.save(transcript)
+        // Quit must not wait for the cancelled task: it can wait for an import or a model download.
+        await MeetingCompletion.abandon(transcription: task) {
+            let endedAt = Date()
+            let tracks = try? await recorder.stop()
+            var transcript = self.transcript(draft.id) ?? draft
+            transcript.recordingEndedAt = endedAt
+            if let tracks {
+                transcript.tracks = tracks
+                transcript.duration = await duration(of: transcript)
+                // Picked up again on next launch; checkpoints let it continue where it stopped.
+                transcript.status = .pending
+                try? store.save(transcript)
+            }
+            await topicGraphs[transcript.id]?.finish(tracks: transcript.tracks, startedAt: recorder.startedAt)
+            sendWebhook(.meetingEnded, for: transcript)
         }
-        await topicGraphs[transcript.id]?.finish(tracks: transcript.tracks, startedAt: recorder.startedAt)
-        sendWebhook(.meetingEnded, for: transcript)
         recordingState = .idle
     }
 
