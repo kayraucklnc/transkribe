@@ -5,6 +5,20 @@ import Testing
 @Suite struct EvaluationSchedulerTests {
     let start = Date(timeIntervalSince1970: 0)
 
+    @Test func forcedOrQueuedEvaluationResetsTheConsumedWordCount() {
+        var scheduler = EvaluationScheduler(minNewWords: 5, seconds: 10, now: start)
+        scheduler.didEvaluate(committedWordCount: 2, at: start.addingTimeInterval(1))
+        let before = scheduler.shouldEvaluate(committedWordCount: 6, at: start.addingTimeInterval(2))
+        let threshold = scheduler.shouldEvaluate(committedWordCount: 7, at: start.addingTimeInterval(2))
+        #expect(!before)
+        #expect(threshold)
+        scheduler.didEvaluate(committedWordCount: 15, at: start.addingTimeInterval(3))
+        let afterQueued = scheduler.shouldEvaluate(committedWordCount: 16, at: start.addingTimeInterval(4))
+        let timer = scheduler.shouldEvaluate(committedWordCount: 16, at: start.addingTimeInterval(13))
+        #expect(!afterQueued)
+        #expect(timer)
+    }
+
     @Test func evaluatesAtNewCommittedWordThreshold() {
         var scheduler = EvaluationScheduler(minNewWords: 5, seconds: 10, now: start)
         let before = scheduler.shouldEvaluate(committedWordCount: 4, at: start)

@@ -45,6 +45,12 @@ Add an OpenRouter key in Settings → AI to select Grok 4.3, Claude Haiku 5.5, o
 
 Settings → AI → Topic graph stores a separate enable switch, decision model, naming model, and name refresh interval. The graph is off by default. The defaults are Jev Latest for decisions, GPT-6 Luna for names, and 60 committed words between name updates. These settings require the OpenRouter key. Missing keys and unavailable model selections never cause a switch to another model.
 
+Meetings started with the graph enabled update an in-memory draft with pending text. Committed text goes through routing and naming, one request at a time. The app saves `graph.json` beside `transcript.json` during the meeting and after the final batch. A provider error stops the graph for that meeting and displays a notice. With the graph disabled, the app creates no controller and no graph file.
+
+Each routed batch stores its speech-end, commit, routing, and optional naming timestamps in `graph.json`. At meeting end, the log reports median and p90 for STT lag (speech → commit) and graph lag (speech → routed). Both use all routed batches. Speech → named statistics use only batches with valid names. The controller exposes the latest valid naming sample for the lag chip.
+
+Median averages the middle pair. P90 uses nearest rank. Point keys stay in track time. Topic spans, edges, and lag use meeting time, with provisional capture timing corrected when recording ends.
+
 **Many languages.** Whisper handles almost any language; Parakeet is used for European languages where it is faster and more accurate. Pick the languages you speak and each stretch of audio is locked to one of them, which avoids misdetections and repetition loops. Search ignores accents, and Turkish ı/İ just works.
 
 ![A Turkish conversation](docs/screenshots/turkish.png)

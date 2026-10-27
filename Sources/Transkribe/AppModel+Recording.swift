@@ -71,8 +71,9 @@ extension AppModel {
                 if let task = live?.task {
                     // The last batch is transcribed from the live copy; then the transcript is final.
                     live = nil
-                    await finishLiveTranscription(id: id, task: task)
+                    await finishLiveTranscription(id: id, task: task, startedAt: recorder.startedAt)
                 } else {
+                    await finishTopicGraph(for: id, startedAt: recorder.startedAt)
                     update(id, persist: true) { $0.status = .pending }
                     processQueue()
                     sendWebhook(.meetingEnded, for: transcript(id) ?? draft)
@@ -82,6 +83,7 @@ extension AppModel {
                 task?.cancel()
                 live = nil
                 _ = try? await task?.value
+                await finishTopicGraph(for: id, startedAt: recorder.startedAt)
                 if let transcript = transcript(id) { delete(transcript.id) } else { try? store.delete(draft) }
                 show(RecordingError.nothingRecorded)
                 sendWebhook(.meetingEnded, for: draft)
@@ -90,6 +92,7 @@ extension AppModel {
                 task?.cancel()
                 live = nil
                 _ = try? await task?.value
+                await finishTopicGraph(for: id, startedAt: recorder.startedAt)
                 // Keep the audio: it is transcribed again from the saved files.
                 update(id, persist: true) { $0.status = .pending }
                 show(error)
@@ -112,6 +115,7 @@ extension AppModel {
         try? store.save(transcript)
         transcripts.insert(transcript, at: 0)
         liveRecordingID = transcript.id
+        startTopicGraph(for: transcript, startedAt: recorder.startedAt ?? Date())
 
         let sources = recorder.liveTracks.map { LiveAudioSource(url: $0.url) }
         let pairs = zip(transcript.tracks, sources).map { ($0, $1 as AudioSource) }
@@ -123,8 +127,13 @@ extension AppModel {
         activity[transcript.id] = .live
     }
 
-    private func finishLiveTranscription(id: Transcript.ID, task: Task<Void, Error>) async {
-        await MeetingCompletion.finish(transcription: task, recover: { _ in
+    private func finishLiveTranscription(id: Transcript.ID, task: Task<Void, Error>, startedAt: Date?) async {
+        let finalized = Task {
+            let result = await task.result
+            await finishTopicGraph(for: id, startedAt: startedAt)
+            try result.get()
+        }
+        await MeetingCompletion.finish(transcription: finalized, recover: { _ in
             // Fall back to transcribing the finished recording files from scratch.
             update(id, persist: true) { $0.status = .pending; $0.segments = [] }
             processQueue()
@@ -156,6 +165,7 @@ extension AppModel {
             transcript.status = .pending
             try? store.save(transcript)
         }
+        await topicGraphs[transcript.id]?.finish(tracks: transcript.tracks, startedAt: recorder.startedAt)
         sendWebhook(.meetingEnded, for: transcript)
         recordingState = .idle
     }
