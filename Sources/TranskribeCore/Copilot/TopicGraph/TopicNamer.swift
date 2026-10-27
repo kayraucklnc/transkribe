@@ -40,6 +40,10 @@ public actor TopicNamer {
         guard let name = try? JSONDecoder().decode(TopicName.self, from: Data(response.utf8)) else {
             throw AIError("The topic namer received invalid JSON.")
         }
+        guard !name.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !name.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AIError("The topic namer received an empty label or summary.")
+        }
         return name
     }
 }

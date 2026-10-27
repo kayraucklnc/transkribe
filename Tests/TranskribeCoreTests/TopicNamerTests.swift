@@ -58,4 +58,31 @@ import Testing
         #expect(try await namer.name(topicId: topicId, in: graph) != nil)
         #expect(provider.calls.count == 3)
     }
+
+    @Test(arguments: [false, true], [
+        "not JSON", "{}", #"{"label":"New"}"#,
+        #"{"label":null,"summary":"Summary"}"#,
+        #"{"label":"  \n\t","summary":"Summary"}"#,
+        #"{"label":"New","summary":" \n "}"#,
+        #"[{"label":"New","summary":"Summary"}]"#,
+    ])
+    func invalidNamesPreserveTheOldNameOrFirstWords(hasName: Bool, reply: String) async throws {
+        let provider = FakeAIProvider(budget: 100_000) { _ in reply }
+        let namer = TopicNamer(provider: provider, model: provider.models[0])
+        var graph = TopicGraph(meetingId: UUID())
+        let topicId = try #require(try graph.apply(.init(route: .new, points: [
+            .init(track: 0, start: 0, end: 1, text: "The launch price"),
+        ])))
+        if hasName { try graph.setName(topicId: topicId, label: "Pricing", summary: "Keep this summary.") }
+        let original = graph
+
+        await #expect(throws: AIError.self) {
+            if let name = try await namer.name(topicId: topicId, in: graph) {
+                try graph.setName(topicId: topicId, label: name.label, summary: name.summary)
+            }
+        }
+
+        #expect(graph == original)
+        #expect(provider.calls.count == 1)
+    }
 }
