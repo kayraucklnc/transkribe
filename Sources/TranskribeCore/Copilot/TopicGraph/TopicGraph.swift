@@ -19,7 +19,7 @@ public struct TopicGraph: Codable, Equatable, Sendable {
     public private(set) var edges: [TopicGraphEdge] = []
     public private(set) var trackOffsets: [Int: TimeInterval] = [:]
     public private(set) var meetingStartedAt: Date?
-    public var lagRecords: [TopicGraphLagRecord] = []
+    public internal(set) var lagRecords: [TopicGraphLagRecord] = []
     /// Pending text for the current topic. Codable excludes this value.
     public var draft = ""
 
@@ -212,6 +212,13 @@ public struct TopicGraph: Codable, Equatable, Sendable {
             else { throw TopicGraphError.invalidGraph }
         }
         let pointsById = Dictionary(uniqueKeysWithValues: points.map { ($0.id, $0) })
+        var laggedPoints: Set<String> = []
+        for record in lagRecords {
+            let dates = [record.speechEndedAt, record.committedAt, record.routedAt] + (record.namedAt.map { [$0] } ?? [])
+            guard !record.pointIds.isEmpty,
+                  record.pointIds.allSatisfy({ pointsById[$0] != nil && laggedPoints.insert($0).inserted }),
+                  dates.allSatisfy({ $0.timeIntervalSince1970.isFinite }) else { throw TopicGraphError.invalidGraph }
+        }
         for edge in edges {
             guard let from = indices[edge.from], let to = indices[edge.to], from != to,
                   let point = pointsById[edge.pointId], point.topicId == edge.to, edge.atSec == meetingTime(for: point)

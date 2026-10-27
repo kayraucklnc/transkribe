@@ -16,8 +16,13 @@ public struct EvaluationScheduler: Sendable {
     public mutating func shouldEvaluate(committedWordCount: Int, at now: Date = Date()) -> Bool {
         guard committedWordCount - evaluatedWordCount >= minNewWords
                 || now.timeIntervalSince(evaluatedAt) >= seconds else { return false }
+        didEvaluate(committedWordCount: committedWordCount, at: now)
+        return true
+    }
+
+    /// Records batches consumed by a forced pass or while a previous request was running.
+    public mutating func didEvaluate(committedWordCount: Int, at now: Date = Date()) {
         evaluatedWordCount = committedWordCount
         evaluatedAt = now
-        return true
     }
 }

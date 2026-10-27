@@ -81,6 +81,7 @@ public struct TopicGraphTopic: Codable, Equatable, Identifiable, Sendable {
     public internal(set) var summary: String
     public internal(set) var status: TopicStatus
     public let parentId: String?
+    /// Topic bounds use meeting time, including track offsets.
     public internal(set) var firstSec: TimeInterval
     public internal(set) var lastSec: TimeInterval
     /// Sum of the unique points' durations, including simultaneous tracks.
@@ -103,6 +104,7 @@ public struct TopicGraphEdge: Codable, Equatable, Identifiable, Sendable {
     public let from: String
     public let to: String
     public let type: TopicEdgeType
+    /// Meeting time of the destination point, including its track offset.
     public let atSec: TimeInterval
     public let pointId: String
     public let confidence: Double?

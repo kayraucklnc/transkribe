@@ -3,6 +3,38 @@ import Testing
 @testable import TranskribeCore
 
 @Suite struct LiveTopicGraphSessionTests {
+    @Test func savesDuringTheMeetingAndKeepsMalformedNamesOutOfNamingStatistics() async throws {
+        let root = try Fixtures.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = UUID()
+        let store = TopicGraphStore(rootDirectory: root)
+        let client = LiveGraphDecisionFake()
+        let provider = FakeAIProvider(budget: 100_000) { _ in "not JSON" }
+        let updates = AsyncStream<TopicGraph>.makeStream()
+        defer { updates.continuation.finish() }
+        let session = LiveTopicGraphSession(meetingId: id, meetingStartedAt: Date(), store: store,
+            router: TopicRouter(client: client, model: .jev),
+            namer: TopicNamer(provider: provider, model: provider.models[0]),
+            scheduler: EvaluationScheduler(minNewWords: 1),
+            onChange: { graph, _ in updates.continuation.yield(graph) })
+        await session.receive(progress(committed: [.init(start: 0, end: 1, text: "First words")], pending: [
+            .init(start: 1, end: 2, text: "Unsaved draft"),
+        ]), track: 0, offset: 0)
+        for await graph in updates.stream where !graph.lagRecords.isEmpty {
+            #expect(graph.draft == "Unsaved draft")
+            let live = store.load(meetingId: id)
+            #expect(live.error == nil)
+            #expect(live.graph.points.first?.text == "First words")
+            #expect(live.graph.draft.isEmpty)
+            break
+        }
+        let summary = await session.finish(trackOffsets: [0: 0])
+        #expect(summary.routedSampleCount == 1)
+        #expect(summary.namedSampleCount == 0)
+        #expect(summary.namedMedian == nil)
+        #expect(store.load(meetingId: id).graph.topics.first?.label == "First words")
+    }
+
     @Test(arguments: [false, true])
     func providerFailureStopsTheMeetingWithoutFallback(namingFails: Bool) async throws {
         let root = try Fixtures.temporaryDirectory()
@@ -110,7 +142,7 @@ import Testing
         await session.receive(progress(committed: [.init(start: 1, end: 2, text: "Price")]), track: 0,
                               offset: 0, at: start.addingTimeInterval(4))
         #expect(await client.callCount == 0)
-        let summary = await session.finish(trackOffsets: [0: 1], meetingStartedAt: start)
+        let summary = await session.finish(trackOffsets: [0: 1], meetingStartedAt: start.addingTimeInterval(1))
         let loaded = store.load(meetingId: id)
         #expect(loaded.error == nil)
         #expect(loaded.graph.points.map(\.text) == ["Price"])
@@ -118,9 +150,9 @@ import Testing
         #expect(loaded.graph.topics.first?.firstSec == 2)
         #expect(loaded.graph.draft.isEmpty)
         let record = try #require(loaded.graph.lagRecords.first)
-        #expect(record.sttLag == 1)
-        #expect(record.graphLag == 5)
-        #expect(record.namedLag == 5)
+        #expect(record.sttLag == 0)
+        #expect(record.graphLag == 4)
+        #expect(record.namedLag == 4)
         #expect(summary.routedSampleCount == 1)
         #expect(await client.callCount == 1)
     }
@@ -151,7 +183,10 @@ private actor LiveGraphDecisionFake: DecisionClient {
         await withCheckedContinuation { started = $0 }
     }
 
-    func release() { blocked?.resume(); blocked = nil }
+    func release() {
+        blocked?.resume()
+        blocked = nil
+    }
 
     func decide(model: DecisionModel, state: String,
                 questions: [String: DecisionQuestion]) async throws -> [String: DecisionAnswer] {

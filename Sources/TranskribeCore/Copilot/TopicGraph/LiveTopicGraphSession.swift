@@ -72,7 +72,10 @@ public actor LiveTopicGraphSession {
     @discardableResult
     public func finish(trackOffsets: [Int: TimeInterval], meetingStartedAt: Date? = nil) async -> TopicGraphLagSummary {
         if let summary { return summary }
-        if isCancelled { return TopicGraphLagSummary(records: graph.lagRecords) }
+        if isCancelled {
+            await worker?.value
+            return TopicGraphLagSummary(records: graph.lagRecords)
+        }
         isFinishing = true
         wakeTask?.cancel()
         wakeTask = nil
@@ -128,6 +131,7 @@ public actor LiveTopicGraphSession {
         while notice == nil, !queued.isEmpty {
             let batch = queued
             queued.removeAll()
+            scheduler.didEvaluate(committedWordCount: committedWordCount, at: now())
             do {
                 guard let proposal = try await router.route(batch.map(\.point), in: graph) else { continue }
                 guard !isCancelled else { break }

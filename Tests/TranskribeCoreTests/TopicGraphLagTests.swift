@@ -30,6 +30,19 @@ import Testing
 }
 
 @Suite struct TopicGraphTimelineTests {
+    @Test func oldGraphsDecodeWithoutTimingMetadataAndInvalidLagReferencesFail() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        try graph.apply(.init(route: .new, points: [.init(track: 0, start: 1, end: 2, text: "First")]))
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(graph)) as? [String: Any])
+        for key in ["trackOffsets", "meetingStartedAt", "lagRecords"] { json[key] = nil }
+        let old = try JSONDecoder().decode(TopicGraph.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(old == graph)
+        graph.lagRecords = [.init(pointIds: ["missing"], speechEndedAt: Date(), committedAt: Date(), routedAt: Date())]
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(TopicGraph.self, from: JSONEncoder().encode(graph))
+        }
+    }
+
     @Test func reconcilesMeetingTimesWithoutChangingTrackKeysOrLagMilestones() throws {
         let start = Date(timeIntervalSince1970: 100)
         var graph = TopicGraph(meetingId: UUID())
