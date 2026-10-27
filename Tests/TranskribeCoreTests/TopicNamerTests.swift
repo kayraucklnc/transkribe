@@ -76,12 +76,12 @@ import Testing
         if hasName { try graph.setName(topicId: topicId, label: "Pricing", summary: "Keep this summary.") }
         let original = graph
 
-        await #expect(throws: AIError.self) {
-            if let name = try await namer.name(topicId: topicId, in: graph) {
-                try graph.setName(topicId: topicId, label: name.label, summary: name.summary)
-            }
+        let name = try await namer.name(topicId: topicId, in: graph)
+        if let name {
+            try graph.setName(topicId: topicId, label: name.label, summary: name.summary)
         }
 
+        #expect(name == nil)
         #expect(graph == original)
         #expect(provider.calls.count == 1)
     }

@@ -22,7 +22,8 @@ public actor TopicNamer {
         self.settings = settings
     }
 
-    /// Apply a returned name with TopicGraph.setName. Errors leave the graph unchanged.
+    /// Call after committing points. Apply a returned name with TopicGraph.setName.
+    /// Returns nil below the refresh threshold or for malformed output. Provider errors propagate.
     public func name(topicId: String, in graph: TopicGraph) async throws -> TopicName? {
         guard graph.topics.contains(where: { $0.id == topicId }) else { throw TopicGraphError.unknownTopic }
         let points = graph.points.filter { $0.topicId == topicId }
@@ -37,13 +38,9 @@ public actor TopicNamer {
         let response = try await AIStreaming.collect(provider.stream(
             model: model, system: TopicNamerPrompt.system, messages: [message]
         ))
-        guard let name = try? JSONDecoder().decode(TopicName.self, from: Data(response.utf8)) else {
-            throw AIError("The topic namer received invalid JSON.")
-        }
-        guard !name.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !name.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AIError("The topic namer received an empty label or summary.")
-        }
+        guard let name = try? JSONDecoder().decode(TopicName.self, from: Data(response.utf8)),
+              !name.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !name.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return TopicName(label: Self.singleLine(name.label, limit: TopicGraph.maxLabelLength),
                          summary: Self.singleLine(name.summary, limit: TopicGraph.maxSummaryLength))
     }
