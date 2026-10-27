@@ -10,6 +10,7 @@ struct ConversationView: View {
     @AppStorage("showsInsights") private var showsInsights = true
     @State private var showsFind = false
     @State private var isJoining = false
+    @State private var showsTopicGraph = false
 
     private var isLive: Bool { model.liveRecordingID == transcript.id }
     private var allowsInsights: Bool { model.copilotSettings.showsInsights(isLive: isLive) }
@@ -17,7 +18,14 @@ struct ConversationView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                ChatThread(transcript: transcript, isLive: isLive)
+                Group {
+                    if showsTopicGraph, model.copilotSettings.topicGraph {
+                        TopicGraphView(transcript: transcript, isLive: isLive)
+                            .id(transcript.id)
+                    } else {
+                        ChatThread(transcript: transcript, isLive: isLive)
+                    }
+                }
                     .overlay(alignment: .top) {
                         if showsFind || !model.query.isEmpty {
                             FindBar(transcript: transcript) {
@@ -95,6 +103,12 @@ struct ConversationView: View {
             ToolbarSpacer(.flexible)
         }
         ToolbarItemGroup {
+            if model.copilotSettings.topicGraph {
+                Toggle(isOn: $showsTopicGraph) {
+                    Label("Topic graph", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                .help("Show the topic graph")
+            }
             Button {
                 model.recordFollowUp(of: transcript)
             } label: {

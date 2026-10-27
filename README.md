@@ -47,7 +47,9 @@ Settings → AI → Topic graph stores a separate enable switch, decision model,
 
 Meetings started with the graph enabled update an in-memory draft with pending text. Committed text goes through routing and naming, one request at a time. The app saves `graph.json` beside `transcript.json` during the meeting and after the final batch. A provider error stops the graph for that meeting and displays a notice. With the graph disabled, the app creates no controller and no graph file.
 
-Each routed batch stores its speech-end, commit, routing, and optional naming timestamps in `graph.json`. At meeting end, the log reports median and p90 for STT lag (speech → commit) and graph lag (speech → routed). Both use all routed batches. Speech → named statistics use only batches with valid names. The controller exposes the latest valid naming sample for the lag chip.
+Use the Topic graph toolbar toggle in a conversation to switch between the transcript and graph. Cards show topic names, time spans, point counts, and question, decision, and action badges. The current topic has an accent border. Pending speech appears in a faded draft card. Scroll in either direction to explore larger graphs. The Current topic button returns to the active card. Finished meetings open their saved `graph.json`.
+
+Each routed batch stores its speech-end, commit, routing, and optional naming timestamps in `graph.json`. At meeting end, the log reports median and p90 for STT lag (speech → commit) and graph lag (speech → routed). Both use all routed batches. Speech → named statistics use only batches with valid names. The lag chip shows the latest valid naming sample and excludes unnamed batches.
 
 Median averages the middle pair. P90 uses nearest rank. Point keys stay in track time. Topic spans, edges, and lag use meeting time, with provisional capture timing corrected when recording ends.
 
