@@ -37,6 +37,40 @@ import Testing
         #expect(graph.points.last?.track == 1)
         #expect(graph.points.last?.speaker == 3)
     }
+
+    @Test(arguments: ["new", "return", "side"], ["statement", "question", "decision", "action", "objection"])
+    func mapsClosedLabelsToOneApplicableProposal(route: String, kind: String) async throws {
+        var graph = TopicGraph(meetingId: UUID())
+        let first = try #require(try graph.apply(.init(route: .new, points: [
+            .init(track: 0, start: 0, end: 1, text: "Pricing"),
+        ])))
+        let current = try #require(try graph.apply(.init(route: .new, points: [
+            .init(track: 0, start: 2, end: 3, text: "Delivery"),
+        ])))
+        let label = route == "new" ? "new" : "\(route):\(first)"
+        let expected: TopicRoute = route == "new" ? .new : route == "return" ? .returnTo(first) : .side(first)
+        let client = TopicDecisionFake(answers: [
+            "route": .init(type: .choice, choice: label, confidence: 0.7),
+            "kind": .init(type: .choice, choice: kind),
+        ])
+        let router = TopicRouter(client: client, model: .luna)
+
+        let proposal = try #require(try await router.route([
+            .init(track: 1, start: 4, end: 5, text: "Ship it.", speaker: 2),
+        ], in: graph))
+
+        #expect(proposal.route == expected)
+        #expect(proposal.confidence == 0.7)
+        #expect(proposal.points.map(\.kind.rawValue) == [kind])
+        let request = try #require(await client.requests.first)
+        #expect(Set(request.questions["route"]?.criteria.keys.map { $0 } ?? [])
+            == ["continue", "new", "return:\(first)", "side:\(first)", "side:\(current)"])
+        try graph.apply(proposal)
+        #expect(graph.points.last?.text == "Ship it.")
+        if route == "return" { #expect(graph.currentTopicId == first) }
+        if route == "side" { #expect(graph.topics.last?.parentId == first) }
+        if route == "new" { #expect(graph.topics.count == 3) }
+    }
 }
 
 private struct TopicDecisionRequest: Encodable, Sendable {
@@ -47,11 +81,21 @@ private struct TopicDecisionRequest: Encodable, Sendable {
 
 private actor TopicDecisionFake: DecisionClient {
     private(set) var requests: [TopicDecisionRequest] = []
+    private let answers: [String: DecisionAnswer]
+    private let error: AIError?
+
+    init(answers: [String: DecisionAnswer] = [
+        "route": .init(type: .choice, choice: "continue", confidence: 0.9),
+        "kind": .init(type: .choice, choice: "statement"),
+    ], error: AIError? = nil) {
+        self.answers = answers
+        self.error = error
+    }
 
     func decide(model: DecisionModel, state: String,
                 questions: [String: DecisionQuestion]) async throws -> [String: DecisionAnswer] {
         requests.append(.init(model: model, state: state, questions: questions))
-        return ["route": .init(type: .choice, choice: "continue", confidence: 0.9),
-                "kind": .init(type: .choice, choice: "statement")]
+        if let error { throw error }
+        return answers
     }
 }

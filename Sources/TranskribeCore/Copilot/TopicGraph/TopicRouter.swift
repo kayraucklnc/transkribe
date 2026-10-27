@@ -46,15 +46,36 @@ public struct TopicRouter: Sendable {
         }, recentPoints: Array(graph.points.filter { $0.topicId == graph.currentTopicId }.suffix(8)),
            segments: segments.map(Segment.init))
         let data = try JSONEncoder().encode(state)
+        let questions = questions(in: graph)
         let answers = try await client.decide(model: model,
             state: "<topic_graph_data>\n\(String(decoding: data, as: UTF8.self))\n</topic_graph_data>",
-            questions: questions(in: graph))
-        return TopicGraphProposal(route: .continue, points: segments, confidence: answers["route"]?.confidence)
+            questions: questions)
+        guard Set(answers.keys) == Set(questions.keys),
+              let routeAnswer = answers["route"], routeAnswer.type == .choice,
+              let label = routeAnswer.choice, questions["route"]?.criteria[label] != nil,
+              let kindAnswer = answers["kind"], kindAnswer.type == .choice,
+              let kindLabel = kindAnswer.choice, let kind = TopicPointKind(rawValue: kindLabel),
+              routeAnswer.confidence.map({ $0.isFinite && (0...1).contains($0) }) ?? true
+        else { throw AIError("The topic router received an invalid decision answer.") }
+        let route: TopicRoute
+        switch label {
+        case "continue": route = .continue
+        case "new": route = .new
+        default:
+            if label.hasPrefix("return:") { route = .returnTo(String(label.dropFirst(7))) }
+            else { route = .side(String(label.dropFirst(5))) }
+        }
+        return TopicGraphProposal(route: route, points: segments.map {
+            .init(track: $0.track, start: $0.start, end: $0.end, text: $0.text, speaker: $0.speaker, kind: kind)
+        }, confidence: routeAnswer.confidence)
     }
 
     private func questions(in graph: TopicGraph) -> [String: DecisionQuestion] {
         var routes = ["continue": "The new segments continue the current topic.",
                       "new": "The new segments start a new main topic."]
+        for topic in graph.topics.prefix(while: { $0.id != graph.currentTopicId }) {
+            routes["return:\(topic.id)"] = "The new segments resume the earlier topic with this ID."
+        }
         for topic in graph.topics where topic.status == .open || topic.id == graph.currentTopicId {
             routes["side:\(topic.id)"] = "The new segments start a side topic under the topic with this ID."
         }
