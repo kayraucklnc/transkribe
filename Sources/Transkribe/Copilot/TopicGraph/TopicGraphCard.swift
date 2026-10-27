@@ -7,6 +7,7 @@ struct TopicGraphCard: View {
     let kindCounts: [TopicPointKind: Int]
     let isCurrent: Bool
     let isLive: Bool
+    var isHighlighted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -41,7 +42,8 @@ struct TopicGraphCard: View {
         .padding(16)
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14)
-            .strokeBorder(isCurrent ? Color.accentColor : Color.primary.opacity(0.12), lineWidth: isCurrent ? 2 : 1))
+            .strokeBorder(isCurrent || isHighlighted ? Color.accentColor : Color.primary.opacity(0.12),
+                          lineWidth: isCurrent || isHighlighted ? 2 : 1))
         .shadow(color: .black.opacity(isCurrent ? 0.08 : 0.03), radius: 6, y: 2)
         .accessibilityElement(children: .combine)
         .help(topic.summary.isEmpty ? topic.label : "\(topic.label)\n\(topic.summary)")

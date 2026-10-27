@@ -4,10 +4,12 @@ import TranskribeCore
 struct TopicGraphView: View {
     let transcript: Transcript
     let isLive: Bool
+    let onJump: (TimeInterval) -> Void
     @Environment(AppModel.self) private var model
     @State private var savedGraph: TopicGraph?
     @State private var loadError: String?
     @State private var scene: TopicGraphScene?
+    @State private var selectedTopicId: String?
 
     private var controller: LiveTopicGraphController? { model.topicGraphs[transcript.id] }
     private var graph: TopicGraph? { controller?.graph ?? savedGraph }
@@ -25,7 +27,9 @@ struct TopicGraphView: View {
                     .background(Color.orange.opacity(0.08))
             }
             if let scene, !scene.layout.cards.isEmpty || scene.layout.draftCard != nil {
-                TopicGraphCanvas(scene: scene, isLive: isLive)
+                TopicGraphCanvas(scene: scene, isLive: isLive, selectedTopicId: selectedTopicId) {
+                    selectedTopicId = $0
+                }
             } else if graph == nil && !isLive && loadError == nil {
                 ProgressView("Loading topic graph…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -38,6 +42,19 @@ struct TopicGraphView: View {
             }
         }
         .background(Theme.canvas)
+        .inspector(isPresented: Binding(
+            get: { selectedTopicId != nil },
+            set: { if !$0 { selectedTopicId = nil } }
+        )) {
+            if let scene, let id = selectedTopicId, let topic = scene.topics[id] {
+                TopicGraphDetails(topic: topic, points: scene.points[id] ?? [], graph: scene.graph,
+                    speakerName: { transcript.name(of: $0, people: model.people) },
+                    onJump: { target in
+                        if let time = TopicGraphInteraction.jumpTime(to: target, in: scene.graph) { onJump(time) }
+                    }, onClose: { selectedTopicId = nil })
+                    .inspectorColumnWidth(min: 260, ideal: 320, max: 400)
+            }
+        }
         .task(id: "\(transcript.id)-\(isLive)-\(controller != nil)") {
             guard !isLive, controller == nil else { return }
             let id = transcript.id
@@ -110,6 +127,7 @@ struct TopicGraphView: View {
 struct TopicGraphScene: Sendable {
     let graph: TopicGraph
     let layout: TopicGraphLayout
+    let hitRegions: [TopicGraphInteraction.Region]
     let topics: [String: TopicGraphTopic]
     let points: [String: [TopicGraphPoint]]
     let kindCounts: [String: [TopicPointKind: Int]]
@@ -117,8 +135,12 @@ struct TopicGraphScene: Sendable {
     init(graph: TopicGraph) {
         self.graph = graph
         layout = TopicGraphLayout(graph: graph)
+        hitRegions = TopicGraphInteraction.regions(in: layout)
         topics = Dictionary(uniqueKeysWithValues: graph.topics.map { ($0.id, $0) })
-        points = Dictionary(grouping: graph.points, by: \.topicId)
+        points = Dictionary(grouping: graph.points.sorted {
+            let left = graph.meetingTime(for: $0), right = graph.meetingTime(for: $1)
+            return left == right ? $0.track < $1.track : left < right
+        }, by: \.topicId)
         kindCounts = points.mapValues { points in
             points.reduce(into: [:]) { $0[$1.kind, default: 0] += 1 }
         }

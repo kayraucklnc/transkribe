@@ -20,7 +20,7 @@ struct ConversationView: View {
             VStack(spacing: 0) {
                 Group {
                     if showsTopicGraph, model.copilotSettings.topicGraph {
-                        TopicGraphView(transcript: transcript, isLive: isLive)
+                        TopicGraphView(transcript: transcript, isLive: isLive, onJump: jumpToTranscript)
                             .id(transcript.id)
                     } else {
                         ChatThread(transcript: transcript, isLive: isLive)
@@ -169,6 +169,12 @@ struct ConversationView: View {
 
     private enum ExportFormat: String {
         case plainText = "txt", markdown = "md", srt, pdf
+    }
+
+    private func jumpToTranscript(at time: TimeInterval) {
+        showsTopicGraph = false
+        model.open(transcript.id, at: time)
+        if !isLive { player.seek(to: time) }
     }
 
     private func export(_ format: ExportFormat) {
