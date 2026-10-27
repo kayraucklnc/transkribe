@@ -14,6 +14,8 @@ enum TopicNamerPrompt {
 
     static func message(points: [TopicGraphPoint]) throws -> AIMessage {
         let json = String(decoding: try JSONEncoder().encode(points), as: UTF8.self)
+            .replacingOccurrences(of: "<", with: "\\u003C")
+            .replacingOccurrences(of: ">", with: "\\u003E")
         return AIMessage(role: .user, text: "<topic_naming_data>\n\(json)\n</topic_naming_data>")
     }
 }
