@@ -49,6 +49,8 @@ Meetings started with the graph enabled update an in-memory draft with pending t
 
 Use the Topic graph toolbar toggle in a conversation to switch between the transcript and graph. Cards show topic names, time spans, point counts, and question, decision, and action badges. The current topic has an accent border. Pending speech appears in a faded draft card. Scroll in either direction to explore larger graphs. The Current topic button returns to the active card. Finished meetings open their saved `graph.json`.
 
+Hover over a topic to highlight its direct neighbours and connecting edges. Other topics and edges fade. Select a card to open its summary, time span, and points with speaker names and kinds. Select a point or Go to start to show that moment in the transcript. For a finished meeting, this also seeks the audio player. Jump times include each track's offset.
+
 Each routed batch stores its speech-end, commit, routing, and optional naming timestamps in `graph.json`. At meeting end, the log reports median and p90 for STT lag (speech → commit) and graph lag (speech → routed). Both use all routed batches. Speech → named statistics use only batches with valid names. The lag chip shows the latest valid naming sample and excludes unnamed batches.
 
 Median averages the middle pair. P90 uses nearest rank. Point keys stay in track time. Topic spans, edges, and lag use meeting time, with provisional capture timing corrected when recording ends.
