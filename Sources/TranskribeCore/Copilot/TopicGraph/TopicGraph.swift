@@ -17,11 +17,15 @@ public struct TopicGraph: Codable, Equatable, Sendable {
     public private(set) var topics: [TopicGraphTopic] = []
     public private(set) var points: [TopicGraphPoint] = []
     public private(set) var edges: [TopicGraphEdge] = []
+    public private(set) var trackOffsets: [Int: TimeInterval] = [:]
+    public private(set) var meetingStartedAt: Date?
+    public var lagRecords: [TopicGraphLagRecord] = []
     /// Pending text for the current topic. Codable excludes this value.
     public var draft = ""
 
     private enum CodingKeys: String, CodingKey {
         case version, meetingId, untilSec, currentTopicId, topics, points, edges
+        case trackOffsets, meetingStartedAt, lagRecords
     }
 
     public init(meetingId: UUID) {
@@ -33,8 +37,22 @@ public struct TopicGraph: Codable, Equatable, Sendable {
     public mutating func apply(_ proposal: TopicGraphProposal) throws -> String? {
         var updated = self
         let topicId = try updated.commit(proposal)
+        updated.refreshTimeline()
         self = updated
         return topicId
+    }
+
+    public func meetingTime(for point: TopicGraphPoint) -> TimeInterval {
+        point.start + (trackOffsets[point.track] ?? 0)
+    }
+
+    /// Point keys retain track time. Topic spans, edges and lag use meeting time.
+    public mutating func reconcileTimeline(trackOffsets: [Int: TimeInterval], meetingStartedAt: Date) throws {
+        guard trackOffsets.allSatisfy({ $0.key >= 0 && $0.value.isFinite && $0.value >= 0 }),
+              meetingStartedAt.timeIntervalSince1970.isFinite else { throw TopicGraphError.invalidGraph }
+        self.trackOffsets = trackOffsets
+        self.meetingStartedAt = meetingStartedAt
+        refreshTimeline()
     }
 
     public mutating func setName(topicId: String, label: String, summary: String) throws {
@@ -55,7 +73,33 @@ public struct TopicGraph: Codable, Equatable, Sendable {
         topics = try container.decode([TopicGraphTopic].self, forKey: .topics)
         points = try container.decode([TopicGraphPoint].self, forKey: .points)
         edges = try container.decode([TopicGraphEdge].self, forKey: .edges)
+        trackOffsets = try container.decodeIfPresent([Int: TimeInterval].self, forKey: .trackOffsets) ?? [:]
+        meetingStartedAt = try container.decodeIfPresent(Date.self, forKey: .meetingStartedAt)
+        lagRecords = try container.decodeIfPresent([TopicGraphLagRecord].self, forKey: .lagRecords) ?? []
         try validate()
+    }
+
+    private mutating func refreshTimeline() {
+        let grouped = Dictionary(grouping: points, by: \.topicId)
+        for index in topics.indices {
+            let values = grouped[topics[index].id] ?? []
+            topics[index].firstSec = values.map { meetingTime(for: $0) }.min() ?? 0
+            topics[index].lastSec = values.map { $0.end + (trackOffsets[$0.track] ?? 0) }.max() ?? 0
+        }
+        untilSec = topics.map(\.lastSec).max() ?? 0
+        let byId = Dictionary(uniqueKeysWithValues: points.map { ($0.id, $0) })
+        edges = edges.map { edge in
+            .init(id: edge.id, from: edge.from, to: edge.to, type: edge.type,
+                  atSec: byId[edge.pointId].map { meetingTime(for: $0) } ?? edge.atSec,
+                  pointId: edge.pointId, confidence: edge.confidence)
+        }
+        if let meetingStartedAt {
+            for index in lagRecords.indices {
+                let end = lagRecords[index].pointIds.compactMap { byId[$0] }
+                    .map { $0.end + (trackOffsets[$0.track] ?? 0) }.max()
+                if let end { lagRecords[index].speechEndedAt = meetingStartedAt.addingTimeInterval(end) }
+            }
+        }
     }
 
     private mutating func commit(_ proposal: TopicGraphProposal) throws -> String? {
@@ -133,6 +177,7 @@ public struct TopicGraph: Codable, Equatable, Sendable {
 
     private func validate() throws {
         guard untilSec.isFinite, untilSec >= 0,
+              trackOffsets.allSatisfy({ $0.key >= 0 && $0.value.isFinite && $0.value >= 0 }),
               Set(topics.map(\.id)).count == topics.count,
               Set(points.map(\.id)).count == points.count,
               Set(edges.map(\.id)).count == edges.count,
@@ -146,7 +191,7 @@ public struct TopicGraph: Codable, Equatable, Sendable {
         for point in points {
             guard indices[point.topicId] != nil, point.track >= 0,
                   point.start.isFinite, point.end.isFinite, point.start >= 0,
-                  point.end >= point.start, untilSec >= point.end,
+                  point.end >= point.start, untilSec >= point.end + (trackOffsets[point.track] ?? 0),
                   ranges.insert(.init(track: point.track, start: point.start, end: point.end)).inserted
             else { throw TopicGraphError.invalidGraph }
         }
@@ -159,8 +204,9 @@ public struct TopicGraph: Codable, Equatable, Sendable {
                   topic.label.count <= Self.maxLabelLength, topic.summary.count <= Self.maxSummaryLength,
                   topic.firstSec.isFinite, topic.lastSec.isFinite, topic.totalSec.isFinite,
                   let topicPoints = grouped[topic.id],
-                  topic.firstSec == topicPoints.map(\.start).min(),
-                  topic.lastSec == topicPoints.map(\.end).max() else { throw TopicGraphError.invalidGraph }
+                  topic.firstSec == topicPoints.map({ meetingTime(for: $0) }).min(),
+                  topic.lastSec == topicPoints.map({ $0.end + (trackOffsets[$0.track] ?? 0) }).max()
+            else { throw TopicGraphError.invalidGraph }
             let total = topicPoints.reduce(0) { $0 + ($1.end - $1.start) }
             guard total.isFinite, abs(total - topic.totalSec) <= max(1, total) * 1e-9
             else { throw TopicGraphError.invalidGraph }
@@ -168,7 +214,7 @@ public struct TopicGraph: Codable, Equatable, Sendable {
         let pointsById = Dictionary(uniqueKeysWithValues: points.map { ($0.id, $0) })
         for edge in edges {
             guard let from = indices[edge.from], let to = indices[edge.to], from != to,
-                  let point = pointsById[edge.pointId], point.topicId == edge.to, edge.atSec == point.start
+                  let point = pointsById[edge.pointId], point.topicId == edge.to, edge.atSec == meetingTime(for: point)
             else { throw TopicGraphError.invalidGraph }
             if let confidence = edge.confidence, !confidence.isFinite || !(0...1).contains(confidence) {
                 throw TopicGraphError.invalidGraph
