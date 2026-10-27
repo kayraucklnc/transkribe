@@ -43,6 +43,8 @@ Add an xAI key in Settings → AI to select Grok for streamed answers with web a
 
 Add an OpenRouter key in Settings → AI to select Grok 4.3, Claude Haiku 5.5, or GPT-6 Luna for streamed Ask answers. Transkribe stores this key in Keychain under `openrouter-api-key`. Selecting an OpenRouter model sends transcript text and questions to OpenRouter and the model provider. Without the key, OpenRouter is unavailable and the app keeps your selection. Transkribe never selects OpenRouter as an automatic fallback.
 
+Settings → AI → Topic graph stores a separate enable switch, decision model, naming model, and name refresh interval. The graph is off by default. The defaults are Jev Latest for decisions, GPT-6 Luna for names, and 60 committed words between name updates. These settings require the OpenRouter key. Missing keys and unavailable model selections never cause a switch to another model.
+
 **Many languages.** Whisper handles almost any language; Parakeet is used for European languages where it is faster and more accurate. Pick the languages you speak and each stretch of audio is locked to one of them, which avoids misdetections and repetition loops. Search ignores accents, and Turkish ı/İ just works.
 
 ![A Turkish conversation](docs/screenshots/turkish.png)
