@@ -22,10 +22,10 @@ cp "$BIN" "$APP/Contents/MacOS/Transkribe"
 cp "$MCP" "$APP/Contents/MacOS/transkribe-mcp"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
-echo "→ Rendering icon"
+echo "→ Building icon"
 ICONSET="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$ICONSET"
-swift scripts/make-icon.swift "$ICONSET/icon_512x512@2x.png"
+cp Resources/AppIcon.png "$ICONSET/icon_512x512@2x.png"
 for size in 16 32 128 256 512; do
   sips -z $size $size "$ICONSET/icon_512x512@2x.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
   double=$((size * 2))

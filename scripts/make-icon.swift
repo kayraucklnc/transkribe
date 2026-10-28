@@ -1,10 +1,13 @@
 // Renders the app icon: a soft gradient squircle with a white waveform.
-// Usage: swift scripts/make-icon.swift <output.png>
+// Usage: swift scripts/make-icon.swift Resources/AppIcon.png   (build-app.sh builds the .icns from it)
 import AppKit
 
 let size: CGFloat = 1024
-let image = NSImage(size: NSSize(width: size, height: size))
-image.lockFocus()
+// A bitmap of exactly 1024 pixels: lockFocus on an NSImage renders at 2x on Retina screens.
+let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size), pixelsHigh: Int(size),
+                              bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                              colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
 let context = NSGraphicsContext.current!.cgContext
 
 let inset: CGFloat = 100
@@ -21,10 +24,23 @@ context.restoreGState()
 context.saveGState()
 context.addPath(shape)
 context.clip()
-let colors = [NSColor(red: 1.0, green: 0.36, blue: 0.33, alpha: 1).cgColor,
-              NSColor(red: 0.83, green: 0.13, blue: 0.36, alpha: 1).cgColor] as CFArray
-let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1])!
-context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: size), end: CGPoint(x: size, y: 0), options: [])
+// Top-left to bottom-right, computed per pixel: drawLinearGradient dithers, which makes the PNG
+// four times bigger (too big for tools that read the committed icon).
+let from: [CGFloat] = [1.0, 0.36, 0.33], to: [CGFloat] = [0.83, 0.13, 0.36]
+let side = Int(size)
+var pixels = [UInt8](repeating: 255, count: side * side * 4)
+for row in 0..<side {
+    for column in 0..<side {
+        let t = CGFloat(row + column) / CGFloat(2 * (side - 1))
+        for channel in 0..<3 {
+            pixels[(row * side + column) * 4 + channel] = UInt8((from[channel] + (to[channel] - from[channel]) * t) * 255 + 0.5)
+        }
+    }
+}
+let fill = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: side * 4,
+                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                   provider: CGDataProvider(data: Data(pixels) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+context.draw(fill, in: CGRect(x: 0, y: 0, width: size, height: size))
 context.restoreGState()
 
 let heights: [CGFloat] = [0.22, 0.42, 0.7, 0.5, 0.86, 0.58, 0.36, 0.62, 0.3]
@@ -40,7 +56,6 @@ for height in heights {
     context.fillPath()
     x += barWidth + gap
 }
-image.unlockFocus()
+NSGraphicsContext.current = nil
 
-let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
 try! bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[1]))
