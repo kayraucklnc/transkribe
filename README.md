@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="Resources/AppIcon.png" width="128" height="128" alt="Transkribe icon">
+
 # Transkribe
 
 **Every word, kept.**
