@@ -79,6 +79,8 @@ public final class RecordingSession: @unchecked Sendable {
     }
 
     public let source: RecordingSource
+    /// Provisional during startup. Stop reconciles this date with the first captured sample.
+    public private(set) var startedAt: Date?
     private let directory: URL
     private let microphone = MicrophoneRecorder()
     private let system = SystemAudioRecorder()
@@ -106,6 +108,7 @@ public final class RecordingSession: @unchecked Sendable {
     /// `onLevel` reports the louder of the active inputs (0...1), on an arbitrary thread.
     public func start(onLevel: @escaping @Sendable (Float) -> Void, onFailure: @escaping @Sendable (Error) -> Void) async throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        startedAt = Date()
         if source.usesSystemAudio {
             try await system.start(
                 to: directory.appendingPathComponent(Self.systemFile),
@@ -139,6 +142,7 @@ public final class RecordingSession: @unchecked Sendable {
             starts.append((Self.systemFile, .system, start))
         }
         guard let origin = starts.map(\.start).min() else { throw RecordingError.nothingRecorded }
+        startedAt = Date().addingTimeInterval(origin - ProcessInfo.processInfo.systemUptime)
         return starts.map { AudioTrack(fileName: $0.file, source: $0.source, offset: $0.start - origin) }
     }
 }

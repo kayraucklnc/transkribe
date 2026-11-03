@@ -15,6 +15,19 @@ import Testing
         #expect(AIModelSelection.automaticFallback(models: models, availability: [:]) == nil)
     }
 
+    @Test func openRouterRequiresExplicitSelectionAndNeverFallsBack() {
+        let models = [OpenRouterProvider.grok, OpenRouterProvider.haiku, OpenRouterProvider.luna,
+                      AppleIntelligenceProvider.model, ClaudeCodeProvider.sonnet]
+        #expect(AIModelSelection.automaticFallback(models: models, availability: [.openRouter: .available]) == nil)
+        #expect(AIModelSelection.automaticFallback(models: models, availability: [
+            .openRouter: .unavailable(reason: "Add an OpenRouter API key in Settings."),
+            .appleIntelligence: .available, .claudeCode: .available,
+        ], selectedModel: OpenRouterProvider.haiku) == nil)
+        #expect(AIModelSelection.automaticFallback(models: models, availability: [
+            .openRouter: .available, .appleIntelligence: .available,
+        ]) == AppleIntelligenceProvider.model)
+    }
+
     @Test func decodesExistingModelSelections() throws {
         let data = Data(#"{"provider":"claudeCode","id":"sonnet","displayName":"Claude Sonnet (Claude Code)"}"#.utf8)
         let model = try JSONDecoder().decode(AIModel.self, from: data)

@@ -124,6 +124,15 @@ public final class AnswerStore: @unchecked Sendable {
         return stored.values.filter { $0.conversationId == conversationId }.sorted { $0.createdAt < $1.createdAt }
     }
 
+    public func clear(conversationId: UUID) {
+        lock.lock()
+        defer { lock.unlock() }
+        for id in Array(stored.keys) where stored[id]?.conversationId == conversationId {
+            stored[id] = nil
+            updateTimes[id] = nil
+        }
+    }
+
     private func validate(conversationId: UUID, markdown: String, snapshots: [MCPConversationSnapshot], at time: Date) throws {
         guard let conversation = snapshots.first(where: { $0.transcript.id == conversationId }) else {
             throw AnswerStoreError.unknownConversation
