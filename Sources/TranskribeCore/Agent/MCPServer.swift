@@ -3,6 +3,7 @@ import Foundation
 /// A minimal Model Context Protocol server (JSON-RPC over stdio, one message per line) that
 /// exposes the conversation library as tools, so an AI client can look things up itself.
 public final class MCPServer: @unchecked Sendable {
+    private static let maximumLimit = 100
     private let library: () -> ConversationLibrary
     private let extraTools: [MCPTool]
     private let scopeFilter: ((Transcript) -> Bool)?
@@ -18,7 +19,8 @@ public final class MCPServer: @unchecked Sendable {
         tool("search_conversations",
              "Search every recorded conversation for lines containing the given words (accent- and case-insensitive; Turkish, English, Italian…). Returns the best matching lines with conversation id, title, date, participants and timestamps. Search in the language the conversation was held in; try synonyms if nothing matches.",
              ["query": ["type": "string", "description": "Words to look for"],
-              "limit": ["type": "integer", "description": "Maximum lines to return (default 25)"]], required: ["query"]),
+              "limit": ["type": "integer", "minimum": 1, "maximum": maximumLimit,
+                        "description": "Return at most this many lines. The default is 25. Values above 100 use 100."]], required: ["query"]),
         tool("read_conversation",
              "Read a conversation (or part of it) by id: title, date, participants (who is the user), whether it's a group or one-to-one, its place in an ongoing conversation, summary, and timestamped lines. Use from/to (seconds) to read a section around search hits.",
              ["id": ["type": "string", "description": "Conversation id"],
@@ -27,7 +29,8 @@ public final class MCPServer: @unchecked Sendable {
         tool("list_conversations",
              "List conversations, newest first, with id, date, length, participants, kind and a one-line summary when available. Optionally only those with a given person.",
              ["person": ["type": "string", "description": "Only conversations with this person (part of a name)"],
-              "limit": ["type": "integer", "description": "Maximum conversations (default 30)"]], required: []),
+              "limit": ["type": "integer", "minimum": 1, "maximum": maximumLimit,
+                        "description": "Return at most this many conversations. The default is 30. Values above 100 use 100."]], required: []),
         tool("list_people",
              "List the people the user talks with: name, email addresses, number of conversations and when they last talked.",
              [:], required: []),
@@ -47,12 +50,16 @@ public final class MCPServer: @unchecked Sendable {
         switch name {
         case "search_conversations":
             guard let query = arguments["query"] as? String else { return ("Missing “query”.", true) }
-            return (library.search(query: query, limit: (arguments["limit"] as? Int) ?? 25), false)
+            let limit = (arguments["limit"] as? Int) ?? 25
+            guard limit >= 1 else { return ("The limit must be at least 1.", true) }
+            return (library.search(query: query, limit: min(limit, Self.maximumLimit)), false)
         case "read_conversation":
             guard let id = arguments["id"] as? String else { return ("Missing “id”.", true) }
             return (library.conversation(id: id, from: number(arguments["from"]), to: number(arguments["to"])), false)
         case "list_conversations":
-            return (library.listConversations(person: arguments["person"] as? String, limit: (arguments["limit"] as? Int) ?? 30), false)
+            let limit = (arguments["limit"] as? Int) ?? 30
+            guard limit >= 1 else { return ("The limit must be at least 1.", true) }
+            return (library.listConversations(person: arguments["person"] as? String, limit: min(limit, Self.maximumLimit)), false)
         case "list_people":
             return (library.listPeople(), false)
         default:

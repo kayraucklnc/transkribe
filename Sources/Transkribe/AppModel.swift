@@ -69,6 +69,7 @@ final class AppModel {
     var copilotSettings: CopilotSettings {
         didSet {
             copilotSettings.save()
+            if oldValue.intents && !copilotSettings.intents { liveIntents?.pause() }
             if oldValue.mcpServer != copilotSettings.mcpServer || oldValue.mcpPort != copilotSettings.mcpPort
                 || oldValue.mcpReadScopeDays != copilotSettings.mcpReadScopeDays {
                 copilotSettingsChanged?()
@@ -76,6 +77,9 @@ final class AppModel {
         }
     }
     var copilotSettingsChanged: (() -> Void)?
+    var agentAnswerStore: AnswerStore?
+    weak var intentAI: AIService?
+    var liveIntents: LiveIntentController?
     var enhanceTask: Task<Void, Never>?
     var people: [Person] = []
     let peopleStore = PeopleStore()

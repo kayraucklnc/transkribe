@@ -19,6 +19,7 @@ let package = Package(
                 .product(name: "WhisperKit", package: "WhisperKit"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
             ],
+            resources: [.copy("Copilot/Intents/Resources/intents.example.json")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(

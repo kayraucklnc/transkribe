@@ -108,7 +108,9 @@ extension AppModel {
         let engine = overrideEngine ?? self.engine
         let quality = overrideQuality ?? settings.quality
         let id = transcript.id
-        let progress = PipelineProgress(trackCount: sources.count)
+        let startedAt: Date
+        if case .recording(let since) = recordingState { startedAt = since } else { startedAt = transcript.createdAt }
+        let progress = PipelineProgress(trackCount: sources.count, startedAt: startedAt)
         let planner = copilotSettings.windowPlanner(isLive: isLive)
 
         let results = try await withThrowingTaskGroup(of: (Int, TrackTranscriber.Result).self) { group in
@@ -188,6 +190,13 @@ extension AppModel {
         update(id, persist: false) {
             $0.segments = TrackMerger.merge(progress.tracks.compactMap { $0 })
             $0.language = $0.language ?? progressUpdate.language
+        }
+        if isLive, copilotSettings.intents {
+            let committed = Self.label(progressUpdate.committed, track: track, turns: progressUpdate.turns,
+                withCall: transcript.tracks.contains { $0.source == .system }, callSpeech: callSpeech)
+            receiveIntentSegments(id: id, track: track.fileName,
+                committed: TrackMerger.merge([TrackMerger.Track(source: track.source, offset: track.offset, segments: committed)]),
+                startedAt: progress.startedAt, committedAt: Date())
         }
         if let reason = progressUpdate.pausedReason {
             activity[id] = .paused(reason)
@@ -277,8 +286,10 @@ extension AppModel {
 final class PipelineProgress {
     var tracks: [TrackMerger.Track?]
     var fraction: [Double]
+    let startedAt: Date
 
-    init(trackCount: Int) {
+    init(trackCount: Int, startedAt: Date) {
+        self.startedAt = startedAt
         tracks = Array(repeating: nil, count: trackCount)
         fraction = Array(repeating: 0, count: trackCount)
     }

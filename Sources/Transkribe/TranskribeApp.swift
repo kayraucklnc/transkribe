@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainActor.assumeIsolated {
             dictation.installShortcut()
             dictation.warmUp()
+            if model.copilotSettings.intents { _ = ai }
             calls.start()
             _ = mcp
         }
