@@ -45,7 +45,8 @@ struct NotchHUDView: View {
                 ElapsedTime(since: since)
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.92))
+                    // Orange until the next meeting starts, once you've been nudged to wrap up.
+                    .foregroundStyle(hud.reminders.upNext == nil ? Color.white.opacity(0.92) : Color.orange)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .frame(width: NotchGeometry.wing)
@@ -77,6 +78,8 @@ struct NotchHUDView: View {
             }, title: "Recording saved", subtitle: [title, Self.durationText(duration)].filter { !$0.isEmpty }.joined(separator: " · "))
         case .reminder(let reminder):
             ReminderCard(reminder: reminder, reminders: hud.reminders)
+        case .wrapUp(let next):
+            WrapUpLine(meeting: next, action: hud.reminders.expandNudge)
         case .callSeemsOver(let until):
             CardRow(icon: {
                 Image(systemName: "phone.down.fill")
@@ -123,6 +126,41 @@ struct NotchHUDView: View {
         if minutes < 1 { return "\(Int(seconds)) s" }
         if minutes < 60 { return "\(minutes) min" }
         return "\(minutes / 60) h \(minutes % 60) min"
+    }
+}
+
+/// "Wrap up · Design review in 5 min": readable at a glance, mid-call. Click for the full card.
+private struct WrapUpLine: View {
+    let meeting: CalendarMeeting
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                HStack(spacing: 7) {
+                    Image(systemName: "clock.fill")
+                        .foregroundStyle(.orange)
+                    Text("Wrap up")
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                    Text("·").foregroundStyle(.white.opacity(0.4))
+                    Text(meeting.title)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(-1)
+                    Text(MeetingCountdown.text(until: meeting.start, now: context.date))
+                        .foregroundStyle(.orange)
+                        .fixedSize()
+                }
+                .font(.system(size: 12))
+                .frame(maxWidth: .infinity)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Your next meeting is soon · click to see it")
+        .accessibilityLabel("Wrap up. \(meeting.title) \(MeetingCountdown.text(until: meeting.start, now: .now))")
     }
 }
 

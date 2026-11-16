@@ -121,3 +121,36 @@ import Testing
         #expect(CallApps.name(for: "com.google.Drive") == nil)
     }
 }
+
+@Suite struct WrapUpScheduleTests {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+    private func meeting(_ id: String, startsIn minutes: Double, length: Double = 30) -> CalendarMeeting {
+        CalendarMeeting(id: id, title: id, start: now + minutes * 60, end: now + (minutes + length) * 60, link: nil)
+    }
+
+    @Test func nudgesOnceWhenTheNextMeetingIsClose() {
+        var schedule = WrapUpSchedule(minutes: 5)
+        let current = meeting("standup", startsIn: -40) // ran long
+        let next = meeting("design review", startsIn: 4)
+        #expect(schedule.due(in: [current, next], current: "standup", at: now)?.id == "design review")
+        #expect(schedule.due(in: [current, next], current: "standup", at: now + 60) == nil)
+    }
+
+    @Test func waitsUntilTheNextMeetingIsWithinTheLead() {
+        var schedule = WrapUpSchedule(minutes: 5)
+        let next = meeting("design review", startsIn: 12)
+        #expect(schedule.due(in: [next], current: nil, at: now) == nil)
+        #expect(schedule.due(in: [next], current: nil, at: now + 7 * 60)?.id == "design review")
+    }
+
+    @Test func neverNudgesAboutTheMeetingYouAreIn() {
+        var schedule = WrapUpSchedule(minutes: 5)
+        let joinedEarly = meeting("sync", startsIn: 2)
+        #expect(schedule.due(in: [joinedEarly], current: "sync", at: now) == nil)
+    }
+
+    @Test func offMeansOff() {
+        var off = WrapUpSchedule(minutes: 0)
+        #expect(off.due(in: [meeting("a", startsIn: 1)], current: nil, at: now) == nil)
+    }
+}

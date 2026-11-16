@@ -23,11 +23,13 @@ final class NotchHUD {
         case callPrompt(app: String)
         /// The call's mic went quiet before the meeting's planned end; still recording until then.
         case callSeemsOver(until: Date)
+        /// Mid-call, one line: "Wrap up · Design review in 5 min".
+        case wrapUp(CalendarMeeting)
 
         var showsCard: Bool {
             switch self {
             case .hidden, .pill: false
-            case .recordingDetails, .announcement, .reminder, .callPrompt, .callSeemsOver: true
+            case .recordingDetails, .announcement, .reminder, .callPrompt, .callSeemsOver, .wrapUp: true
             }
         }
     }
@@ -92,6 +94,7 @@ final class NotchHUD {
         if let until = calls.keepsRecordingUntil, isRecording { return .callSeemsOver(until: until) }
         if let app = calls.prompt { return .callPrompt(app: app) }
         if let reminder = reminders.current { return .reminder(reminder) }
+        if let next = reminders.nudge, isRecording { return .wrapUp(next) }
         guard isRecording, showsRecording else { return .hidden }
         return isExpanded ? .recordingDetails : .pill
     }
@@ -129,6 +132,7 @@ final class NotchHUD {
             _ = reminders.current
             _ = calls.prompt
             _ = calls.keepsRecordingUntil
+            _ = reminders.nudge
         } onChange: { [weak self] in
             // Fires before the change lands; re-reading on the next turn sees the new value.
             Task { @MainActor in self?.observe() }
@@ -219,6 +223,8 @@ struct NotchGeometry: Equatable {
     static let wing: CGFloat = 44
     static let cardWidth: CGFloat = 360
     static let cardHeight: CGFloat = 64
+    /// A one-line nudge: less island, less distraction.
+    static let slimHeight: CGFloat = 34
 
     static func current() -> NotchGeometry {
         let screen = NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? NSScreen.screens.first
@@ -242,6 +248,8 @@ struct NotchGeometry: Equatable {
             return CGSize(width: notchWidth, height: topHeight)
         case .pill:
             return CGSize(width: hasNotch ? notchWidth + 2 * Self.wing : 2 * Self.wing + 12, height: topHeight)
+        case .wrapUp:
+            return CGSize(width: max(Self.cardWidth, notchWidth + 2 * Self.wing), height: topHeight + Self.slimHeight)
         case .recordingDetails, .announcement, .reminder, .callPrompt, .callSeemsOver:
             return CGSize(width: max(Self.cardWidth, notchWidth + 2 * Self.wing), height: topHeight + Self.cardHeight)
         }

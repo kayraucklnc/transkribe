@@ -165,6 +165,9 @@ final class CallMonitor {
         }
     }
 
+    /// The calendar meeting the running recording is for, if any.
+    var currentMeetingID: CalendarMeeting.ID? { recordedMeeting?.id }
+
     /// Whether the recording running now is for `meeting`.
     func isRecording(_ meeting: CalendarMeeting) -> Bool {
         recordedMeeting?.id == meeting.id

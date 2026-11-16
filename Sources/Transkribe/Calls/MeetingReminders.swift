@@ -19,15 +19,30 @@ final class MeetingReminders {
     var recordsWhenJoining: Bool {
         didSet { UserDefaults.standard.set(recordsWhenJoining, forKey: Self.recordKey) }
     }
+    /// While you're in a call, how long before the next meeting to nudge you to wrap up. 0 is off.
+    var wrapUpMinutes: Int {
+        didSet {
+            UserDefaults.standard.set(wrapUpMinutes, forKey: Self.wrapUpKey)
+            wrapUp.minutes = wrapUpMinutes
+            restart()
+        }
+    }
 
     /// The reminder on screen now.
     private(set) var current: MeetingReminder?
     /// The next meeting today, for Settings ("Next: Weekly sync in 40 min").
     private(set) var next: CalendarMeeting?
+    /// A one-line "wrap up, <next meeting> in 5 min" under the notch, while you're in a call.
+    private(set) var nudge: CalendarMeeting?
+    /// The meeting you were nudged about, until it starts: the island's timer stays orange.
+    private(set) var upNext: CalendarMeeting?
 
     private static let enabledKey = "remindsAboutMeetings"
     private static let minutesKey = "meetingReminderMinutes"
     private static let recordKey = "recordsJoinedMeetings"
+    private static let wrapUpKey = "wrapUpNudgeMinutes"
+    /// A nudge is a glance, not a card: it slides away on its own.
+    static let nudgeDuration: Duration = .seconds(8)
     /// A reminder card goes away on its own this long after the meeting starts.
     private static let cardLifetime: TimeInterval = 5 * 60
     private static let refreshInterval: TimeInterval = 60
@@ -35,6 +50,8 @@ final class MeetingReminders {
     private unowned let model: AppModel
     private unowned let calls: CallMonitor
     private var schedule: MeetingReminderSchedule
+    private var wrapUp: WrapUpSchedule
+    private var nudgeTask: Task<Void, Never>?
     private var meetings: [CalendarMeeting] = []
     private var refreshedAt: Date = .distantPast
     private var timer: Timer?
@@ -49,6 +66,9 @@ final class MeetingReminders {
         let saved = MeetingReminderSchedule.normalize(defaults.array(forKey: Self.minutesKey) as? [Int] ?? MeetingReminderSchedule.defaultMinutes)
         minutes = saved
         schedule = MeetingReminderSchedule(minutes: saved)
+        let wrapUpSaved = defaults.object(forKey: Self.wrapUpKey) as? Int ?? WrapUpSchedule.defaultMinutes
+        wrapUpMinutes = wrapUpSaved
+        wrapUp = WrapUpSchedule(minutes: wrapUpSaved)
     }
 
     var calendarAllowed: Bool { CalendarTitles.isAllowed }
@@ -92,6 +112,26 @@ final class MeetingReminders {
         current = nil
     }
 
+    /// Clicking the nudge opens the full card, with Join.
+    func expandNudge() {
+        guard let meeting = nudge else { return }
+        nudgeTask?.cancel()
+        nudge = nil
+        current = MeetingReminder(meeting: meeting, minutesBefore: max(0, Int(meeting.start.timeIntervalSinceNow / 60)))
+    }
+
+    private func show(nudge meeting: CalendarMeeting) {
+        nudge = meeting
+        upNext = meeting
+        // No sound: you're in a call, and a chime would go out through your microphone.
+        nudgeTask?.cancel()
+        nudgeTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.nudgeDuration)
+            guard !Task.isCancelled else { return }
+            self?.nudge = nil
+        }
+    }
+
     func addReminder(minutesBefore value: Int) {
         minutes = MeetingReminderSchedule.normalize(minutes + [value])
     }
@@ -105,7 +145,7 @@ final class MeetingReminders {
     private func restart() {
         timer?.invalidate()
         timer = nil
-        guard isEnabled else { current = nil; return }
+        guard isEnabled || wrapUpMinutes > 0 else { current = nil; return }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -113,10 +153,11 @@ final class MeetingReminders {
     }
 
     private func tick(now: Date = Date()) {
-        guard isEnabled, calendarAllowed, model.settings.completedOnboarding else { return }
+        guard calendarAllowed, model.settings.completedOnboarding else { return }
         if now.timeIntervalSince(refreshedAt) >= Self.refreshInterval {
             meetings = CalendarTitles.upcomingMeetings(from: now)
             schedule.keep(only: meetings)
+            wrapUp.keep(only: meetings)
             refreshedAt = now
         }
         next = meetings.first { $0.start > now }
@@ -124,9 +165,21 @@ final class MeetingReminders {
             || !meetings.contains(where: { $0.id == shown.meeting.id }) {
             current = nil
         }
-        guard let reminder = schedule.due(in: meetings, at: now) else { return }
+        if let soon = upNext, now >= soon.start || !model.isRecording {
+            upNext = nil
+        }
+        let inCall = model.isRecording
+        if inCall, let meeting = wrapUp.due(in: meetings, current: calls.currentMeetingID, at: now) {
+            show(nudge: meeting)
+        }
+        guard isEnabled, let reminder = schedule.due(in: meetings, at: now) else { return }
         // Don't interrupt the call you're recording with a reminder for the same meeting.
-        if model.isRecording, calls.isRecording(reminder.meeting) { return }
+        if inCall, calls.isRecording(reminder.meeting) { return }
+        if inCall {
+            // Mid-call, another meeting's reminder is a quiet one-line nudge, not a card.
+            if nudge?.id != reminder.meeting.id { show(nudge: reminder.meeting) }
+            return
+        }
         current = reminder
         HUDSounds.play(.reminder)
     }

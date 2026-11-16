@@ -184,9 +184,19 @@ private struct MeetingReminderSettings: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                if calendarAllowed {
-                    NextMeetingLine(meeting: reminders.next)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Picker("While I'm in a call, nudge me to wrap up", selection: $reminders.wrapUpMinutes) {
+                    ForEach(WrapUpSchedule.choices, id: \.self) { minutes in
+                        Text(minutes == 0 ? "Off" : "\(minutes) min before the next meeting").tag(minutes)
+                    }
                 }
+                Text("One quiet line by the notch, no sound: “Wrap up · Design review in 5 min”.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if calendarAllowed {
+                NextMeetingLine(meeting: reminders.next)
             }
         }
         .onAppear { calendarAllowed = reminders.calendarAllowed }
