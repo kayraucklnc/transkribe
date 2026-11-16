@@ -93,17 +93,27 @@ public struct TopicTimeline: Equatable, Sendable {
         return result
     }
 
-    /// Horizontal position of a meeting time on a track `width` wide.
-    public func x(for time: TimeInterval, width: CGFloat) -> CGFloat {
-        CGFloat(max(0, time) / max(end, Self.minimumScale)) * width
+    /// The stretch of the meeting to draw. With a span, the window slides with the conversation and
+    /// shows only the last `span` seconds once the meeting is longer than that; without one it shows
+    /// the whole meeting. Short meetings use at least `minimumScale`, so early visits do not fill the width.
+    public func window(span: TimeInterval?) -> ClosedRange<TimeInterval> {
+        guard let span, span > 0, end > span else { return 0...max(end, Self.minimumScale) }
+        return (end - span)...end
     }
 
-    /// Ruler marks at a round interval, at least `spacing` apart on a track `width` wide.
-    public func ticks(width: CGFloat, spacing: CGFloat = 72) -> [TimeInterval] {
-        let scale = max(end, Self.minimumScale)
-        guard width > 0 else { return [0] }
+    /// Horizontal position of a meeting time on a track `width` wide showing `window`.
+    public func x(for time: TimeInterval, in window: ClosedRange<TimeInterval>, width: CGFloat) -> CGFloat {
+        let length = max(window.upperBound - window.lowerBound, 1)
+        return CGFloat((time - window.lowerBound) / length) * width
+    }
+
+    /// Ruler marks at a round interval inside `window`, at least `spacing` apart on a track `width` wide.
+    public func ticks(in window: ClosedRange<TimeInterval>, width: CGFloat, spacing: CGFloat = 72) -> [TimeInterval] {
+        let length = max(window.upperBound - window.lowerBound, 1)
+        guard width > 0 else { return [window.lowerBound] }
         let steps: [TimeInterval] = [15, 30, 60, 120, 300, 600, 900, 1_800, 3_600, 7_200]
-        let step = steps.first { CGFloat($0 / scale) * width >= spacing } ?? steps[steps.count - 1]
-        return stride(from: 0, through: scale, by: step).map { $0 }
+        let step = steps.first { CGFloat($0 / length) * width >= spacing } ?? steps[steps.count - 1]
+        let first = (window.lowerBound / step).rounded(.up) * step
+        return stride(from: first, through: window.upperBound, by: step).map { $0 }
     }
 }

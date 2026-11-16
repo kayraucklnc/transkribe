@@ -13,6 +13,8 @@ struct TopicTimelineView: View {
     let scene: TopicGraphScene
     let isLive: Bool
     let selectedTopicId: String?
+    /// How much of the meeting to show, ending now. `nil` shows the whole meeting.
+    let span: TimeInterval?
     /// Changes when the user asks to see the current topic.
     let focusRequest: Int
     let onSelect: (String) -> Void
@@ -24,7 +26,7 @@ struct TopicTimelineView: View {
         GeometryReader { geometry in
             let labelWidth = min(240, max(150, geometry.size.width * 0.3))
             let trackWidth = max(80, geometry.size.width - Self.leadingInset - Self.trailingInset - labelWidth - 12)
-            let metrics = Metrics(labelWidth: labelWidth, trackWidth: trackWidth)
+            let metrics = Metrics(labelWidth: labelWidth, trackWidth: trackWidth, window: timeline.window(span: span))
             VStack(spacing: 0) {
                 ruler(metrics)
                 Divider().opacity(0.5)
@@ -51,6 +53,7 @@ struct TopicTimelineView: View {
     struct Metrics {
         let labelWidth: CGFloat
         let trackWidth: CGFloat
+        let window: ClosedRange<TimeInterval>
         var trackOrigin: CGFloat { TopicTimelineView.leadingInset + labelWidth + 12 }
     }
 
@@ -61,6 +64,7 @@ struct TopicTimelineView: View {
         let isCurrent = row.id == timeline.currentTopicId
         let isSelected = row.id == selectedTopicId
         let isHovered = row.id == hoveredTopicId
+        let isInView = (scene.visitsByRow[index] ?? []).contains { $0.end >= metrics.window.lowerBound }
         return Button { onSelect(row.id) } label: {
             HStack(spacing: 12) {
                 label(row, topic: topic, isCurrent: isCurrent)
@@ -72,6 +76,8 @@ struct TopicTimelineView: View {
             .padding(.trailing, Self.trailingInset)
             .frame(maxWidth: .infinity, minHeight: Self.rowHeight, maxHeight: Self.rowHeight, alignment: .leading)
             .background(rowTint(isCurrent: isCurrent, isSelected: isSelected, isHovered: isHovered))
+            // Topics with nothing in the window stay in the outline, quieter.
+            .opacity(isInView || isSelected || isHovered ? 1 : 0.45)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -106,8 +112,9 @@ struct TopicTimelineView: View {
         let last = timeline.visits.last
         return ZStack(alignment: .leading) {
             ForEach(visits) { visit in
-                let x = timeline.x(for: visit.start, width: metrics.trackWidth)
-                let width = max(Self.minimumBarWidth, timeline.x(for: visit.end, width: metrics.trackWidth) - x)
+                let x = timeline.x(for: visit.start, in: metrics.window, width: metrics.trackWidth)
+                let width = max(Self.minimumBarWidth,
+                                timeline.x(for: visit.end, in: metrics.window, width: metrics.trackWidth) - x)
                 Capsule()
                     .fill(barColor(isNow: visit.id == last?.id, isCurrent: isCurrent, isEmphasised: isEmphasised))
                     .frame(width: width, height: Self.barHeight)
@@ -115,9 +122,13 @@ struct TopicTimelineView: View {
             }
             if isLive, let last, last.row == index {
                 NowDot()
-                    .offset(x: max(Self.minimumBarWidth, timeline.x(for: last.end, width: metrics.trackWidth)) - 5)
+                    .offset(x: timeline.x(for: last.end, in: metrics.window, width: metrics.trackWidth) - 5)
             }
         }
+        // Visits before the window slide out of view on the left.
+        .frame(width: metrics.trackWidth, alignment: .leading)
+        .clipShape(Rectangle().inset(by: -6))
+        .mask(earlierFade(width: metrics.trackWidth, leading: 0, window: metrics.window).padding(-6))
     }
 
     private func barColor(isNow: Bool, isCurrent: Bool, isEmphasised: Bool) -> Color {
@@ -140,14 +151,16 @@ struct TopicTimelineView: View {
         let rowCount = timeline.rows.count
         return Canvas { context, _ in
             let height = CGFloat(rowCount) * Self.rowHeight
-            for tick in timeline.ticks(width: metrics.trackWidth).dropFirst() {
-                let x = metrics.trackOrigin + timeline.x(for: tick, width: metrics.trackWidth)
+            context.clip(to: Path(CGRect(x: metrics.trackOrigin, y: 0, width: metrics.trackWidth + 6, height: height)))
+            for tick in timeline.ticks(in: metrics.window, width: metrics.trackWidth) where tick > metrics.window.lowerBound {
+                let x = metrics.trackOrigin + timeline.x(for: tick, in: metrics.window, width: metrics.trackWidth)
                 context.stroke(Path { $0.move(to: CGPoint(x: x, y: 0)); $0.addLine(to: CGPoint(x: x, y: height)) },
                                with: .color(.primary.opacity(0.05)), lineWidth: 1)
             }
             let visits = timeline.visits
             for (index, (from, to)) in zip(visits, visits.dropFirst()).enumerated() where from.row != to.row {
-                let x = metrics.trackOrigin + timeline.x(for: to.start, width: metrics.trackWidth)
+                guard to.start >= metrics.window.lowerBound else { continue }
+                let x = metrics.trackOrigin + timeline.x(for: to.start, in: metrics.window, width: metrics.trackWidth)
                 let path = Self.step(at: x, from: Self.centre(of: from.row), to: Self.centre(of: to.row))
                 let isLatest = index == visits.count - 2
                 context.stroke(path, with: .color(isLatest ? Color.accentColor.opacity(0.8) : .primary.opacity(0.3)),
@@ -155,6 +168,7 @@ struct TopicTimelineView: View {
             }
         }
         .frame(height: CGFloat(rowCount) * Self.rowHeight)
+        .mask(earlierFade(width: metrics.trackWidth, leading: metrics.trackOrigin, window: metrics.window))
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -170,13 +184,22 @@ struct TopicTimelineView: View {
         }
     }
 
+    /// Bars and steps fade out at the left edge when earlier parts of the meeting are out of view.
+    private func earlierFade(width: CGFloat, leading: CGFloat, window: ClosedRange<TimeInterval>) -> LinearGradient {
+        let fade = window.lowerBound > 0 ? min(0.2, 32 / max(width, 1)) : 0
+        let start = leading / max(width + leading, 1)
+        return LinearGradient(stops: [.init(color: .black.opacity(window.lowerBound > 0 ? 0 : 1), location: start),
+                                      .init(color: .black, location: start + fade)],
+                              startPoint: .leading, endPoint: .trailing)
+    }
+
     // MARK: Ruler
 
     private func ruler(_ metrics: Metrics) -> some View {
         ZStack(alignment: .topLeading) {
-            ForEach(timeline.ticks(width: metrics.trackWidth), id: \.self) { tick in
-                let x = timeline.x(for: tick, width: metrics.trackWidth)
-                if x <= metrics.trackWidth - 24 || tick == 0 {
+            ForEach(timeline.ticks(in: metrics.window, width: metrics.trackWidth), id: \.self) { tick in
+                let x = timeline.x(for: tick, in: metrics.window, width: metrics.trackWidth)
+                if x <= metrics.trackWidth - 24 || tick == metrics.window.lowerBound {
                     Text(TranscriptFormatter.timestamp(tick))
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.tertiary)

@@ -11,6 +11,9 @@ struct TopicGraphView: View {
     @State private var scene: TopicGraphScene?
     @State private var selectedTopicId: String?
     @State private var focusRequest = 0
+    @AppStorage("topicGraphStyle") private var style = TopicGraphStyle.timeline
+    /// Seconds of the meeting the timeline shows, ending now; 0 shows the whole meeting.
+    @AppStorage("topicTimelineSpan") private var span = 900
 
     private var controller: LiveTopicGraphController? { model.topicGraphs[transcript.id] }
     private var graph: TopicGraph? { controller?.graph ?? savedGraph }
@@ -73,8 +76,15 @@ struct TopicGraphView: View {
     @ViewBuilder
     private var content: some View {
         if let scene, !scene.timeline.rows.isEmpty {
-            TopicTimelineView(scene: scene, isLive: isLive, selectedTopicId: selectedTopicId,
-                              focusRequest: focusRequest) { selectedTopicId = $0 }
+            switch style {
+            case .timeline:
+                TopicTimelineView(scene: scene, isLive: isLive, selectedTopicId: selectedTopicId,
+                                  span: span > 0 ? TimeInterval(span) : nil,
+                                  focusRequest: focusRequest) { selectedTopicId = $0 }
+            case .map:
+                TopicMapView(scene: scene, isLive: isLive, selectedTopicId: selectedTopicId,
+                             focusRequest: focusRequest) { selectedTopicId = $0 }
+            }
         } else if isLoading {
             ProgressView("Loading topic graph…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -112,13 +122,7 @@ struct TopicGraphView: View {
                     .help("The latest batch with a valid topic name. Batches without a name are excluded.")
             }
             if scene?.timeline.rows.isEmpty == false {
-                Button { focusRequest += 1 } label: {
-                    Label(isLive ? "Current topic" : "Latest topic", systemImage: "scope")
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .controlSize(.large)
-                .help(isLive ? "Show the current topic" : "Show the latest topic")
+                TopicGraphControls(style: $style, span: $span, isLive: isLive) { focusRequest += 1 }
             }
         }
         .padding(.horizontal, 20)
@@ -159,12 +163,72 @@ struct TopicGraphListening: View {
     }
 }
 
+enum TopicGraphStyle: String {
+    /// Topics as rows, time left to right: how the conversation moved.
+    case timeline
+    /// Topics as a map: what came up and what branched from what.
+    case map
+}
+
+/// Switch between the timeline and the map, choose how much time the timeline shows, and jump to now.
+struct TopicGraphControls: View {
+    static let spans: [(seconds: Int, title: String, short: String)] = [
+        (300, "Last 5 minutes", "5 min"), (900, "Last 15 minutes", "15 min"),
+        (1_800, "Last 30 minutes", "30 min"), (0, "Whole meeting", "All"),
+    ]
+
+    @Binding var style: TopicGraphStyle
+    @Binding var span: Int
+    let isLive: Bool
+    let onShowCurrent: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if style == .timeline {
+                Menu {
+                    Picker("Show", selection: $span) {
+                        ForEach(Self.spans, id: \.seconds) { Text($0.title).tag($0.seconds) }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Label(Self.spans.first { $0.seconds == span }?.short ?? "All", systemImage: "clock")
+                        .labelStyle(.titleAndIcon)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("How much of the meeting the timeline shows. Short meetings always fit.")
+            }
+            Picker("View", selection: $style) {
+                Image(systemName: "chart.bar.xaxis")
+                    .accessibilityLabel("Timeline")
+                    .help("Timeline: how the conversation moved between topics")
+                    .tag(TopicGraphStyle.timeline)
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                    .accessibilityLabel("Map")
+                    .help("Map: which topics came up and what branched from what")
+                    .tag(TopicGraphStyle.map)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            Button(action: onShowCurrent) {
+                Label(isLive ? "Current topic" : "Latest topic", systemImage: "scope")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .controlSize(.large)
+            .help(isLive ? "Show the current topic" : "Show the latest topic")
+        }
+    }
+}
+
 struct TopicGraphScene: Sendable {
     let graph: TopicGraph
     let timeline: TopicTimeline
     let topics: [String: TopicGraphTopic]
     let points: [String: [TopicGraphPoint]]
     let visitsByRow: [Int: [TopicTimeline.Visit]]
+    let rowsById: [String: TopicTimeline.Row]
 
     init(graph: TopicGraph) {
         self.graph = graph
@@ -175,5 +239,6 @@ struct TopicGraphScene: Sendable {
             return left == right ? $0.track < $1.track : left < right
         }, by: \.topicId)
         visitsByRow = Dictionary(grouping: timeline.visits, by: \.row)
+        rowsById = Dictionary(timeline.rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 }

@@ -96,41 +96,58 @@ import Testing
         #expect(TopicTimeline(graph: graph) == timeline)
     }
 
-    @Test func positionsScaleTheMeetingToTheTrackWidth() throws {
+    @Test func theWholeMeetingWindowScalesToTheTrackWidth() throws {
         var graph = TopicGraph(meetingId: UUID())
         try add(.new, at: 0, to: &graph)
         try add(.new, at: 299, to: &graph)
-
         let timeline = TopicTimeline(graph: graph)
 
+        let window = timeline.window(span: nil)
+
         #expect(timeline.end == 300)
-        #expect(timeline.x(for: 0, width: 600) == 0)
-        #expect(timeline.x(for: 150, width: 600) == 300)
-        #expect(timeline.x(for: 300, width: 600) == 600)
+        #expect(window == 0...300)
+        #expect(timeline.x(for: 0, in: window, width: 600) == 0)
+        #expect(timeline.x(for: 150, in: window, width: 600) == 300)
+        #expect(timeline.x(for: 300, in: window, width: 600) == 600)
     }
 
     @Test func shortMeetingsUseAOneMinuteScale() throws {
         var graph = TopicGraph(meetingId: UUID())
         try add(.new, at: 0, to: &graph)
-
         let timeline = TopicTimeline(graph: graph)
 
-        #expect(timeline.end == 1)
-        #expect(timeline.x(for: 30, width: 600) == 300)
+        #expect(timeline.window(span: nil) == 0...60)
+        #expect(timeline.window(span: 600) == 0...60)
     }
 
-    @Test func rulerTicksUseRoundIntervalsSpacedApart() throws {
+    @Test func aSpanSlidesWithTheConversationOnceTheMeetingIsLonger() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        try add(.new, at: 0, to: &graph)
+        try add(.new, at: 1_799, to: &graph)
+        let timeline = TopicTimeline(graph: graph)
+
+        let window = timeline.window(span: 600)
+
+        #expect(window == 1_200...1_800)
+        // Earlier time falls left of the track and is clipped by the view.
+        #expect(timeline.x(for: 600, in: window, width: 600) < 0)
+        #expect(timeline.x(for: 1_800, in: window, width: 600) == 600)
+        #expect(timeline.window(span: 3_600) == 0...1_800)
+    }
+
+    @Test func rulerTicksUseRoundIntervalsInsideTheWindow() throws {
         var graph = TopicGraph(meetingId: UUID())
         try add(.new, at: 0, to: &graph)
         try add(.new, at: 2_699, to: &graph)
         let timeline = TopicTimeline(graph: graph)
 
-        let ticks = timeline.ticks(width: 600, spacing: 72)
+        let whole = timeline.ticks(in: timeline.window(span: nil), width: 600, spacing: 72)
+        let recent = timeline.ticks(in: timeline.window(span: 600), width: 600, spacing: 72)
 
-        #expect(ticks.first == 0)
-        #expect(ticks == stride(from: 0, through: 2_700, by: 600).map { $0 })
-        for (a, b) in zip(ticks, ticks.dropFirst()) {
-            #expect(timeline.x(for: b, width: 600) - timeline.x(for: a, width: 600) >= 72)
+        #expect(whole == stride(from: 0, through: 2_700, by: 600).map { $0 })
+        #expect(recent == stride(from: 2_160, through: 2_700, by: 120).map { $0 })
+        for ticks in [whole, recent] {
+            for (a, b) in zip(ticks, ticks.dropFirst()) { #expect(b - a > 0) }
         }
     }
 
