@@ -9,6 +9,8 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
     public var webhook: URL?
     public var topicGraph: Bool
     public var topicGraphSettings: TopicGraphSettings
+    public var decisionModel: DecisionModelSelection
+    public var intents: Bool
 
     public static let `default` = CopilotSettings()
     private static let key = "copilotSettings"
@@ -22,11 +24,14 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         case webhook
         case topicGraph
         case topicGraphSettings
+        case decisionModel
+        case intents
     }
 
     public init(fastLiveWindow: Bool = false, askWhileLive: Bool = false, mcpServer: Bool = false,
                 mcpPort: UInt16 = 7788, mcpReadScopeDays: Int = 7, webhook: URL? = nil,
-                topicGraph: Bool = false, topicGraphSettings: TopicGraphSettings = .default) {
+                topicGraph: Bool = false, topicGraphSettings: TopicGraphSettings = .default,
+                decisionModel: DecisionModelSelection = .haiku, intents: Bool = false) {
         self.fastLiveWindow = fastLiveWindow
         self.askWhileLive = askWhileLive
         self.mcpServer = mcpServer
@@ -35,6 +40,8 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         self.webhook = webhook
         self.topicGraph = topicGraph
         self.topicGraphSettings = topicGraphSettings
+        self.decisionModel = decisionModel
+        self.intents = intents
     }
 
     public init(from decoder: Decoder) throws {
@@ -47,6 +54,8 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         webhook = try values.decodeIfPresent(URL.self, forKey: .webhook)
         topicGraph = try values.decodeIfPresent(Bool.self, forKey: .topicGraph) ?? false
         topicGraphSettings = try values.decodeIfPresent(TopicGraphSettings.self, forKey: .topicGraphSettings) ?? .default
+        intents = try values.decodeIfPresent(Bool.self, forKey: .intents) ?? false
+        decisionModel = try values.decodeIfPresent(DecisionModelSelection.self, forKey: .decisionModel) ?? .haiku
     }
 
     public static func load(from defaults: UserDefaults = .standard) -> CopilotSettings {
@@ -65,7 +74,7 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
     }
 
     public func showsInsights(isLive: Bool) -> Bool {
-        !isLive || askWhileLive || mcpServer
+        !isLive || askWhileLive || mcpServer || intents
     }
 
     public func canAsk(status: TranscriptStatus, isLive: Bool) -> Bool {

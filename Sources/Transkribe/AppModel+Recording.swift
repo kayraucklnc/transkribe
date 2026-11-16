@@ -76,6 +76,7 @@ extension AppModel {
                     await finishTopicGraph(for: id, startedAt: recorder.startedAt)
                     update(id, persist: true) { $0.status = .pending }
                     processQueue()
+                    finishLiveIntents(id: id)
                     sendWebhook(.meetingEnded, for: transcript(id) ?? draft)
                 }
             } catch RecordingError.nothingRecorded {
@@ -86,6 +87,7 @@ extension AppModel {
                 }
                 if let transcript = transcript(id) { delete(transcript.id) } else { try? store.delete(draft) }
                 show(RecordingError.nothingRecorded)
+                liveIntents?.pause()
                 sendWebhook(.meetingEnded, for: draft)
             } catch {
                 let task = live?.task
@@ -96,6 +98,7 @@ extension AppModel {
                 // Keep the audio: it is transcribed again from the saved files.
                 update(id, persist: true) { $0.status = .pending }
                 show(error)
+                liveIntents?.pause()
                 sendWebhook(.meetingEnded, for: transcript(id) ?? draft)
             }
         }
@@ -139,6 +142,7 @@ extension AppModel {
             processQueue()
         }, sendEnded: {
             activity[id] = nil
+            finishLiveIntents(id: id)
             liveRecordingID = nil
             selection = id
             if let transcript = transcript(id) { sendWebhook(.meetingEnded, for: transcript) }
@@ -166,6 +170,7 @@ extension AppModel {
                 try? store.save(transcript)
             }
             await topicGraphs[transcript.id]?.finish(tracks: transcript.tracks, startedAt: recorder.startedAt)
+            liveIntents?.pause()
             sendWebhook(.meetingEnded, for: transcript)
         }
         recordingState = .idle
