@@ -5,6 +5,7 @@ import TranskribeCore
 /// First run: a few friendly questions, no jargon, and everything is ready at the end.
 struct OnboardingView: View {
     @Environment(AppModel.self) private var model
+    @Environment(PermissionCenter.self) private var permissions
     @State private var step = Step.welcome
     @State private var draft = TranscriptionSettings.default
     @State private var forward = true
@@ -132,14 +133,14 @@ struct OnboardingView: View {
                     .font(.body.weight(.medium))
             }
             Spacer()
-            if step == .words || step == .permissions || step == .dictation {
+            if step == .words || step == .dictation {
                 Button("Skip") { advance() }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .padding(.trailing, 12)
             }
             PrimaryButton(title: step == .ready ? "Start Using Transkribe" : "Continue", action: advance)
-                .disabled(step == .languages && draft.languages.isEmpty)
+                .disabled((step == .languages && draft.languages.isEmpty) || (step == .permissions && !permissions.readyForSetup))
         }
         .frame(maxWidth: 620)
         .padding(.horizontal, 40)
@@ -225,25 +226,14 @@ private struct StepDots: View {
 }
 
 private struct PermissionsStep: View {
-    @State private var microphone = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-    @State private var systemAudio = CGPreflightScreenCaptureAccess()
-
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Heading(title: "Let Transkribe listen", subtitle: "macOS asks once for each. You can also do this later in System Settings.")
-            PermissionCard(symbol: "mic.fill", title: "Your microphone", detail: "To record what you and people in the room say.",
-                           granted: microphone) {
-                Task {
-                    try? await RecordingSession.requestPermissions(for: .microphone)
-                    microphone = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-                }
+            Heading(title: "Let Transkribe listen",
+                    subtitle: "macOS asks once for each. The microphone and call audio are needed to record; the others turn on reminders, dictation and meeting tabs.")
+            ScrollView {
+                PermissionList()
             }
-            PermissionCard(symbol: "speaker.wave.2.fill", title: "Sound from calls and apps",
-                           detail: "To capture the other side of Zoom, Meet or FaceTime calls. Your screen is never recorded.",
-                           granted: systemAudio, tint: .blue) {
-                _ = CGRequestScreenCaptureAccess()
-                systemAudio = CGPreflightScreenCaptureAccess()
-            }
+            .frame(maxHeight: 460)
         }
     }
 }

@@ -45,6 +45,25 @@ Add an xAI key in Settings → AI to select Grok for streamed answers with web a
 
 Add an OpenRouter key in Settings → AI to select Grok 4.3, Claude Haiku 5.5, or GPT-6 Luna for streamed Ask answers. Transkribe stores this key in Keychain under `openrouter-api-key`. Selecting an OpenRouter model sends transcript text and questions to OpenRouter and the model provider. Without the key, OpenRouter is unavailable and the app keeps your selection. Transkribe never selects OpenRouter as an automatic fallback.
 
+Settings → AI → Topic graph stores a separate enable switch, decision model, naming model, and name refresh interval. The graph is off by default. The defaults are Jev Latest for decisions, GPT-6 Luna for names, and 60 committed words between name updates. These settings require the OpenRouter key. Missing keys and unavailable model selections never cause a switch to another model.
+
+Meetings started with the graph enabled update an in-memory draft with pending text. Committed text goes through routing and naming, one request at a time. The app saves `graph.json` beside `transcript.json` during the meeting and after the final batch. A provider error stops the graph for that meeting and displays a notice. With the graph disabled, the app creates no controller and no graph file.
+
+Use the Topic graph toolbar toggle in a conversation to switch between the transcript and the topics. The icons in the header switch between two views, and the app remembers your choice:
+
+- **Timeline** shows how the conversation moved. It reads like a sequence diagram on its side: each topic is a row, time runs left to right, and the conversation is one line that steps from row to row as the topic changes. Side topics sit indented under the topic they branched from, like an outline. Going back to a topic steps back up to its existing row. Each row shows the total time spent on its topic.
+- **Map** shows the meeting's structure: main topics left to right on one line, each with its side topics hanging beneath it like an org chart, wrapping onto the next line like text. Each topic appears once, with its total time and how many times it came up. The branch leading to the current topic is tinted.
+
+The clock menu sets how much recent conversation stays in focus: the last 5, 15 or 30 minutes (the default is 15), or the whole meeting. Topics the conversation moved on from become history. In the timeline they fold into an "earlier topics" row at the top (click it to show them) and the timeline slides along with the conversation, fading earlier visits at the left edge. In the map their side topics hide and the main topic shrinks to a quiet compact card. A topic comes back as soon as it is discussed again.
+
+In both views the current topic is highlighted, and while recording it stays in view. The newest pending words show in a Listening strip under the header. The scope button shows the current (or latest) topic. Meetings recorded without the graph show an empty state. Finished meetings open their saved `graph.json`.
+
+Hover over a topic to bring out its visits (timeline) or its parent and side topics (map); the tooltip shows its summary. Select a topic to open its summary, time span, and points with speaker names and kinds. Select a point or Go to start to show that moment in the transcript. For a finished meeting, this also seeks the audio player. Jump times include each track's offset.
+
+Each routed batch stores its speech-end, commit, routing, and optional naming timestamps in `graph.json`. At meeting end, the log reports median and p90 for STT lag (speech → commit) and graph lag (speech → routed). Both use all routed batches. Speech → named statistics use only batches with valid names. The header shows the latest valid naming sample (Named … s after speech) and excludes unnamed batches.
+
+Median averages the middle pair. P90 uses nearest rank. Point keys stay in track time. Topic spans, edges, and lag use meeting time, with provisional capture timing corrected when recording ends.
+
 **Settings → AI → Background work → Decision model** selects a separate model for background features.
 Choose Jev Latest or GPT-6 Luna Decisions through OpenRouter, or Claude Haiku 4.5 through the Anthropic API.
 Haiku is the only chat model in this picker. The setting defaults to Haiku.

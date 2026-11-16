@@ -3,6 +3,32 @@ import Testing
 @testable import TranskribeCore
 
 @Suite struct CopilotSettingsTests {
+    @Test(arguments: ["{}", #"{"fastLiveWindow":true}"#,
+                      #"{"topicGraph":null,"topicGraphSettings":null}"#,
+                      #"{"topicGraphSettings":{}}"#])
+    func oldDataKeepsTheTopicGraphOffWithDefaultModels(_ json: String) throws {
+        let settings = try JSONDecoder().decode(CopilotSettings.self, from: Data(json.utf8))
+        #expect(!settings.topicGraph)
+        #expect(settings.topicGraphSettings.decisionModelID == "~typesafe/jev-latest")
+        #expect(settings.topicGraphSettings.namingModelID == "openai/gpt-6-luna")
+        #expect(settings.topicGraphSettings.namingRefreshWords == 60)
+    }
+
+    @Test func topicGraphSettingsPersistIndependently() {
+        let defaults = Fixtures.temporaryDefaults()
+        let graphSettings = TopicGraphSettings(decisionModelID: DecisionModel.luna.id,
+                                               namingModelID: OpenRouterProvider.haiku.id, namingRefreshWords: 25)
+        var settings = CopilotSettings(askWhileLive: true, topicGraph: true, topicGraphSettings: graphSettings)
+        settings.save(to: defaults)
+        #expect(CopilotSettings.load(from: defaults) == settings)
+        settings.topicGraph = false
+        settings.save(to: defaults)
+        let loaded = CopilotSettings.load(from: defaults)
+        #expect(!loaded.topicGraph)
+        #expect(loaded.topicGraphSettings == graphSettings)
+        #expect(loaded.askWhileLive)
+    }
+
     @Test func intentsDefaultOffAndEnableLiveInsights() throws {
         let old = try JSONDecoder().decode(CopilotSettings.self, from: Data("{}".utf8))
         #expect(!old.intents)
@@ -73,7 +99,8 @@ import Testing
         let data = try #require(defaults.data(forKey: "copilotSettings"))
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["webhook"] as? String == "https://webhook.example/events")
-        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "webhook", "decisionModel", "intents"])
+        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays",
+                                   "webhook", "topicGraph", "topicGraphSettings", "decisionModel", "intents"])
     }
 
     @Test func mcpSettingsPersistWithoutSecretsAndDecodeOldData() throws {
@@ -84,7 +111,8 @@ import Testing
         let settings = CopilotSettings(mcpServer: true, mcpPort: 8899, mcpReadScopeDays: 3)
         let data = try JSONEncoder().encode(settings)
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays", "decisionModel", "intents"])
+        #expect(Set(json.keys) == ["fastLiveWindow", "askWhileLive", "mcpServer", "mcpPort", "mcpReadScopeDays",
+                                   "topicGraph", "topicGraphSettings", "decisionModel", "intents"])
         #expect(!String(decoding: data, as: UTF8.self).lowercased().contains("token"))
         #expect(try JSONDecoder().decode(CopilotSettings.self, from: data) == settings)
     }

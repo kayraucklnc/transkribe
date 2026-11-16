@@ -17,6 +17,12 @@ public final class TrackTranscriber: @unchecked Sendable {
         public var language: String?
         /// Set while transcription waits for the Mac to have resources to spare.
         public var pausedReason: String? = nil
+
+        public var liveTrackProgress: LiveTrackProgress {
+            LiveTrackProgress(committed: committed, pending: pending, committedUntil: committedUntil,
+                              availableDuration: availableDuration, turns: turns, language: language,
+                              pausedReason: pausedReason)
+        }
     }
 
     public struct Result: Sendable {

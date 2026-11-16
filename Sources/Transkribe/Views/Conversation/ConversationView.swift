@@ -10,6 +10,11 @@ struct ConversationView: View {
     @AppStorage("showsInsights") private var showsInsights = true
     @State private var showsFind = false
     @State private var isJoining = false
+    @State private var showsTopicGraph = false
+
+    /// Space the player or recording bar covers at the bottom (bar, its 18 pt inset and a margin).
+    /// Views under the bar pad their scroll content by this much.
+    static let bottomBarClearance: CGFloat = 88
 
     private var isLive: Bool { model.liveRecordingID == transcript.id }
     private var allowsInsights: Bool { model.copilotSettings.showsInsights(isLive: isLive) }
@@ -17,7 +22,14 @@ struct ConversationView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                ChatThread(transcript: transcript, isLive: isLive)
+                Group {
+                    if showsTopicGraph, model.copilotSettings.topicGraph {
+                        TopicGraphView(transcript: transcript, isLive: isLive, onJump: jumpToTranscript)
+                            .id(transcript.id)
+                    } else {
+                        ChatThread(transcript: transcript, isLive: isLive)
+                    }
+                }
                     .overlay(alignment: .top) {
                         if showsFind || !model.query.isEmpty {
                             FindBar(transcript: transcript) {
@@ -95,6 +107,12 @@ struct ConversationView: View {
             ToolbarSpacer(.flexible)
         }
         ToolbarItemGroup {
+            if model.copilotSettings.topicGraph {
+                Toggle(isOn: $showsTopicGraph) {
+                    Label("Topic graph", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                .help("Show the topic graph")
+            }
             Button {
                 model.recordFollowUp(of: transcript)
             } label: {
@@ -155,6 +173,12 @@ struct ConversationView: View {
 
     private enum ExportFormat: String {
         case plainText = "txt", markdown = "md", srt, pdf
+    }
+
+    private func jumpToTranscript(at time: TimeInterval) {
+        showsTopicGraph = false
+        model.open(transcript.id, at: time)
+        if !isLive { player.seek(to: time) }
     }
 
     private func export(_ format: ExportFormat) {

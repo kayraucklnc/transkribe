@@ -1,13 +1,16 @@
 import AppKit
 import Observation
-import SwiftUI
 import TranskribeCore
 
 /// Notices when a call starts (Zoom, Meet, FaceTime…), offers to record it, and stops the
-/// recording it started when the call ends.
+/// recording it started when the call ends. The offer shows in the notch island (`NotchHUD`).
 @Observable @MainActor
 final class CallMonitor {
+    /// The app of a call that just started, while the island asks whether to record it.
     private(set) var prompt: String?
+    /// The call's mic went quiet before the meeting's planned end: recording continues until
+    /// this time unless you stop it (see `CallEndPolicy`). The island asks "Call over?".
+    private(set) var keepsRecordingUntil: Date?
     var offersToRecord: Bool {
         didSet { UserDefaults.standard.set(offersToRecord, forKey: Self.offerKey); restart() }
     }
@@ -17,10 +20,16 @@ final class CallMonitor {
     var usesCalendar: Bool {
         didSet { UserDefaults.standard.set(usesCalendar, forKey: Self.calendarKey) }
     }
+    /// Records without asking when a call starts during a calendar meeting that has a call link,
+    /// however you joined it. Off by default: nothing is recorded unless you choose to.
+    var recordsCalendarMeetings: Bool {
+        didSet { UserDefaults.standard.set(recordsCalendarMeetings, forKey: Self.autoKey); restart() }
+    }
 
     private static let offerKey = "offersToRecordCalls"
     private static let stopKey = "stopsRecordingWithCall"
     private static let calendarKey = "namesRecordingsFromCalendar"
+    private static let autoKey = "recordsCalendarMeetingsAutomatically"
     private static let promptDuration: Duration = .seconds(25)
 
     private unowned let model: AppModel
@@ -29,7 +38,14 @@ final class CallMonitor {
     private var promptTask: Task<Void, Never>?
     /// The recording this monitor started for the current call, to stop when it ends.
     private var recordingForCall = false
-    private let panel = CallPromptPanel()
+    /// A meeting joined from its reminder: the next call that starts is recorded under its name.
+    private var joinedMeeting: (meeting: CalendarMeeting, until: Date)?
+    /// The calendar meeting the current recording is for: its end is when a quiet mic may stop it.
+    private var recordedMeeting: CalendarMeeting?
+    /// How long after Join the call may take to pick up the mic (a lobby, a Zoom update).
+    private static let joinWindow: TimeInterval = 15 * 60
+    /// The calendar meeting whose link is open in the browser that started the call being offered.
+    private var promptMeeting: CalendarMeeting?
 
     init(model: AppModel) {
         self.model = model
@@ -37,6 +53,7 @@ final class CallMonitor {
         offersToRecord = defaults.object(forKey: Self.offerKey) as? Bool ?? true
         stopsWithCall = defaults.object(forKey: Self.stopKey) as? Bool ?? true
         usesCalendar = defaults.bool(forKey: Self.calendarKey)
+        recordsCalendarMeetings = defaults.bool(forKey: Self.autoKey)
     }
 
     func start() {
@@ -45,144 +62,146 @@ final class CallMonitor {
 
     private func restart() {
         timer?.invalidate()
-        guard offersToRecord else { return }
+        timer = nil
+        guard offersToRecord || recordsCalendarMeetings || joinedMeeting != nil || recordingForCall else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
     }
 
     private func tick() {
-        switch watch.update(micApps: MicUsage.bundleIDs()) {
+        // While a browser call runs, an open meeting tab gives the mic longer to come back.
+        let meetingOpen = watch.isInCall ? browserMeetings().map { !$0.isEmpty } : nil
+        if recordingForCall, !model.isRecording, model.recordingState == .idle {
+            finishCall() // stopped by hand
+        }
+        switch watch.update(micApps: MicUsage.bundleIDs(), meetingOpen: meetingOpen) {
         case .started(let app)?:
+            if keepsRecordingUntil != nil {
+                keepsRecordingUntil = nil // the call came back; carry on
+                return
+            }
             guard !model.isRecording, model.settings.completedOnboarding else { return }
-            show(prompt: app)
+            let tab = browserMeetings()?.first
+            let scheduled = tab.flatMap(CalendarTitles.meeting(matching:))
+            if let joined = joinedMeeting, Date() <= joined.until {
+                record(joined.meeting)
+            } else if recordsCalendarMeetings, let meeting = scheduled ?? CalendarTitles.meetingWithLinkOnNow() {
+                record(meeting)
+            } else if offersToRecord {
+                promptMeeting = scheduled
+                show(prompt: tab?.service.rawValue ?? app)
+            }
         case .ended?:
             dismiss()
-            if recordingForCall, stopsWithCall, model.isRecording {
-                model.stopRecording()
-                model.showToast("Call ended · recording saved")
+            guard recordingForCall, model.isRecording, stopsWithCall || recordedMeeting != nil else {
+                finishCall()
+                return
             }
-            recordingForCall = false
+            switch CallEndPolicy.decide(now: Date(), scheduledEnd: recordedMeeting?.end, leftMeeting: meetingOpen == false) {
+            case .stop: stopForCallEnd()
+            case .keepUntil(let end): keepsRecordingUntil = end
+            }
         case nil:
-            break
+            if let end = keepsRecordingUntil, Date() >= end {
+                stopForCallEnd()
+            }
+            if let joined = joinedMeeting, Date() > joined.until {
+                joinedMeeting = nil
+                restart()
+            }
         }
     }
 
+    /// From the island: the call is over, stop now.
+    func stopNow() {
+        stopForCallEnd()
+    }
+
+    /// From the island: keep recording; you'll stop it yourself.
+    func keepRecording() {
+        finishCall()
+    }
+
+    private func stopForCallEnd() {
+        if model.isRecording {
+            model.stopRecording()
+            model.showToast("Call ended · recording saved")
+        }
+        finishCall()
+    }
+
+    /// Forgets the call; the recording (if any) now runs until you stop it.
+    private func finishCall() {
+        recordingForCall = false
+        recordedMeeting = nil
+        keepsRecordingUntil = nil
+        restart()
+    }
+
     func recordCall() {
+        if let meeting = promptMeeting {
+            record(meeting)
+            return
+        }
         dismiss()
         let event = usesCalendar ? CalendarTitles.currentEvent() : nil
         model.recordingSource = .both
         model.startRecording(title: event?.title)
         recordingForCall = true
+        // A call during a calendar meeting keeps recording through quiet stretches until it's planned to end.
+        recordedMeeting = CalendarTitles.meetingWithLinkOnNow()
+    }
+
+    /// Records the next call that starts as `meeting`, without asking. If a call app already has
+    /// the mic (you were in the lobby, or joined before clicking), recording starts now.
+    func recordNextCall(as meeting: CalendarMeeting) {
+        guard !model.isRecording else { return }
+        if watch.isInCall {
+            record(meeting)
+        } else {
+            joinedMeeting = (meeting, Date().addingTimeInterval(Self.joinWindow))
+            restart()
+        }
+    }
+
+    /// The calendar meeting the running recording is for, if any.
+    var currentMeetingID: CalendarMeeting.ID? { recordedMeeting?.id }
+
+    /// Whether the recording running now is for `meeting`.
+    func isRecording(_ meeting: CalendarMeeting) -> Bool {
+        recordedMeeting?.id == meeting.id
+    }
+
+    private func record(_ meeting: CalendarMeeting) {
+        dismiss()
+        joinedMeeting = nil
+        model.recordingSource = .both
+        model.startRecording(title: meeting.title)
+        recordingForCall = true
+        recordedMeeting = meeting
     }
 
     func dismiss() {
         promptTask?.cancel()
         prompt = nil
-        panel.hide()
+        promptMeeting = nil
+    }
+
+    /// Meetings open in the browser holding the call's mic; nil if it isn't a browser or can't be read.
+    private func browserMeetings() -> [BrowserMeeting]? {
+        guard let id = watch.activeBundleID, let browser = Browsers.browser(for: id) else { return nil }
+        return BrowserTabs.meetings(in: browser)
     }
 
     private func show(prompt app: String) {
         prompt = app
-        panel.show(monitor: self)
-        NSSound(named: "Pop")?.play()
+        HUDSounds.play(.reminder)
         promptTask?.cancel()
         promptTask = Task {
             try? await Task.sleep(for: Self.promptDuration)
             guard !Task.isCancelled else { return }
             dismiss()
         }
-    }
-}
-
-/// A small card at the top right of the screen, like a notification, that doesn't take focus.
-@MainActor
-private final class CallPromptPanel {
-    private var panel: NSPanel?
-
-    func show(monitor: CallMonitor) {
-        let panel = panel ?? make(monitor: monitor)
-        self.panel = panel
-        if let frame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: frame.maxX - panel.frame.width - 12, y: frame.maxY - panel.frame.height - 8))
-        }
-        panel.orderFrontRegardless()
-    }
-
-    func hide() {
-        let panel = panel
-        Task {
-            try? await Task.sleep(for: .milliseconds(300))
-            panel?.orderOut(nil)
-        }
-    }
-
-    private func make(monitor: CallMonitor) -> NSPanel {
-        let panel = NonActivatingPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 110),
-                                       styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: true)
-        panel.isFloatingPanel = true
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = false
-        panel.hidesOnDeactivate = false
-        let host = NSHostingView(rootView: CallPromptCard(monitor: monitor))
-        host.sizingOptions = []
-        panel.contentView = host
-        return panel
-    }
-}
-
-private final class NonActivatingPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-}
-
-private struct CallPromptCard: View {
-    let monitor: CallMonitor
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            if let app = monitor.prompt {
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle().fill(Theme.record.opacity(0.18)).frame(width: 44, height: 44)
-                        Circle().fill(Theme.record).frame(width: 18, height: 18)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(app) call").font(.system(size: 14, weight: .semibold))
-                        Text("Record both sides and get a transcript?")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    Button("Record", action: monitor.recordCall)
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.record)
-                        .controlSize(.large)
-                }
-                .padding(14)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.primary.opacity(0.1)))
-                .shadow(color: .black.opacity(0.25), radius: 16, y: 6)
-                .overlay(alignment: .topLeading) {
-                    Button(action: monitor.dismiss) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .frame(width: 20, height: 20)
-                            .background(.regularMaterial, in: Circle())
-                            .overlay(Circle().strokeBorder(Color.primary.opacity(0.1)))
-                    }
-                    .buttonStyle(.plain)
-                    .offset(x: -6, y: -6)
-                    .help("Not this time")
-                }
-                .padding(10)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: monitor.prompt)
     }
 }

@@ -5,6 +5,9 @@
     <!-- Hardened runtime (required for notarization) blocks the microphone unless allowed here. -->
     <key>com.apple.security.device.audio-input</key>
     <true/>
+    <!-- Reading meeting tabs in Chrome-family browsers and Safari over Apple Events. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
     <key>com.apple.security.personal-information.calendars</key>
     <true/>
     <key>com.apple.security.personal-information.addressbook</key>

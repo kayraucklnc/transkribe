@@ -7,6 +7,8 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
     public var mcpPort: UInt16
     public var mcpReadScopeDays: Int
     public var webhook: URL?
+    public var topicGraph: Bool
+    public var topicGraphSettings: TopicGraphSettings
     public var decisionModel: DecisionModelSelection
     public var intents: Bool
 
@@ -20,12 +22,15 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         case mcpPort
         case mcpReadScopeDays
         case webhook
+        case topicGraph
+        case topicGraphSettings
         case decisionModel
         case intents
     }
 
     public init(fastLiveWindow: Bool = false, askWhileLive: Bool = false, mcpServer: Bool = false,
                 mcpPort: UInt16 = 7788, mcpReadScopeDays: Int = 7, webhook: URL? = nil,
+                topicGraph: Bool = false, topicGraphSettings: TopicGraphSettings = .default,
                 decisionModel: DecisionModelSelection = .haiku, intents: Bool = false) {
         self.fastLiveWindow = fastLiveWindow
         self.askWhileLive = askWhileLive
@@ -33,6 +38,8 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         self.mcpPort = mcpPort
         self.mcpReadScopeDays = mcpReadScopeDays
         self.webhook = webhook
+        self.topicGraph = topicGraph
+        self.topicGraphSettings = topicGraphSettings
         self.decisionModel = decisionModel
         self.intents = intents
     }
@@ -45,6 +52,8 @@ public struct CopilotSettings: Codable, Equatable, Sendable {
         mcpPort = try values.decodeIfPresent(UInt16.self, forKey: .mcpPort) ?? 7788
         mcpReadScopeDays = try values.decodeIfPresent(Int.self, forKey: .mcpReadScopeDays) ?? 7
         webhook = try values.decodeIfPresent(URL.self, forKey: .webhook)
+        topicGraph = try values.decodeIfPresent(Bool.self, forKey: .topicGraph) ?? false
+        topicGraphSettings = try values.decodeIfPresent(TopicGraphSettings.self, forKey: .topicGraphSettings) ?? .default
         intents = try values.decodeIfPresent(Bool.self, forKey: .intents) ?? false
         decisionModel = try values.decodeIfPresent(DecisionModelSelection.self, forKey: .decisionModel) ?? .haiku
     }
