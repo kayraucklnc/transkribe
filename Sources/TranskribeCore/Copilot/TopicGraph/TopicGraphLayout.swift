@@ -57,9 +57,6 @@ public struct TopicGraphLayout: Equatable, Sendable {
         public func samples(count: Int = 24) -> [CGPoint] {
             (0...count).map { point(at: CGFloat($0) / CGFloat(count)) }
         }
-
-        /// The direction the curve arrives in, for the arrowhead.
-        public var endAngle: CGFloat { atan2(end.y - control2.y, end.x - control2.x) }
     }
 
     /// One step of the conversation. `id` is the graph edge's id, so hover can match it.
@@ -74,7 +71,6 @@ public struct TopicGraphLayout: Equatable, Sendable {
 
         public var start: CGPoint { segments.first?.start ?? .zero }
         public var end: CGPoint { segments.last?.end ?? .zero }
-        public var endAngle: CGFloat { segments.last?.endAngle ?? 0 }
     }
 
     public let cards: [Card]
@@ -190,13 +186,27 @@ public struct TopicGraphLayout: Equatable, Sendable {
         return steps
     }
 
-    /// Neighbouring cards on a line: straight along a row, an S-curve between rows.
+    /// Neighbouring cards on a line: straight along a row; between rows, one soft elbow shaped like a
+    /// quarter ellipse. Into a side topic it leaves the bottom of the card and arrives from the left; back
+    /// up it leaves the right side and arrives from below. Ports sit a little off centre, so a card that is
+    /// both entered and left from below never looks like a line passing under it.
     static func curve(from s: CGRect, to t: CGRect) -> Curve {
-        let start = CGPoint(x: s.maxX, y: s.midY), end = CGPoint(x: t.minX, y: t.midY)
-        let half = (end.x - start.x) / 2
-        return Curve(start: start, control1: CGPoint(x: start.x + half, y: start.y),
-                     control2: CGPoint(x: end.x - half, y: end.y), end: end)
+        if abs(s.midY - t.midY) < 0.5 {
+            return line(from: CGPoint(x: s.maxX, y: s.midY), to: CGPoint(x: t.minX, y: t.midY))
+        }
+        if t.midY > s.midY {
+            let start = CGPoint(x: s.midX + portOffset, y: s.maxY), end = CGPoint(x: t.minX, y: t.midY)
+            return Curve(start: start, control1: CGPoint(x: start.x, y: start.y + (end.y - start.y) * ellipse),
+                         control2: CGPoint(x: end.x - (end.x - start.x) * ellipse, y: end.y), end: end)
+        }
+        let start = CGPoint(x: s.maxX, y: s.midY), end = CGPoint(x: t.midX - portOffset, y: t.maxY)
+        return Curve(start: start, control1: CGPoint(x: start.x + (end.x - start.x) * ellipse, y: start.y),
+                     control2: CGPoint(x: end.x, y: end.y + (start.y - end.y) * ellipse), end: end)
     }
+
+    /// Bézier control distance for a quarter ellipse.
+    static let ellipse: CGFloat = 0.55
+    static let portOffset: CGFloat = 10
 
     /// From the end of one line to the start of the next: down from the card, along the gap between
     /// lines, and down into the next card. Cards own their column, so nothing sits in the way.
@@ -219,9 +229,9 @@ public struct TopicGraphLayout: Equatable, Sendable {
               control2: CGPoint(x: a.x + (b.x - a.x) * 2 / 3, y: a.y + (b.y - a.y) * 2 / 3), end: b)
     }
 
-    /// A rounded corner: 0.55 of the way to the corner approximates a quarter circle.
+    /// A rounded corner: control points `ellipse` of the way to the corner approximate a quarter circle.
     static func corner(from a: CGPoint, at c: CGPoint, to b: CGPoint) -> Curve {
-        Curve(start: a, control1: CGPoint(x: a.x + (c.x - a.x) * 0.55, y: a.y + (c.y - a.y) * 0.55),
-              control2: CGPoint(x: b.x + (c.x - b.x) * 0.55, y: b.y + (c.y - b.y) * 0.55), end: b)
+        Curve(start: a, control1: CGPoint(x: a.x + (c.x - a.x) * ellipse, y: a.y + (c.y - a.y) * ellipse),
+              control2: CGPoint(x: b.x + (c.x - b.x) * ellipse, y: b.y + (c.y - b.y) * ellipse), end: b)
     }
 }

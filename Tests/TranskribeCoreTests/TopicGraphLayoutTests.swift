@@ -75,26 +75,37 @@ import Testing
         for edge in layout.edges {
             let source = try #require(frames[edge.from]), target = try #require(frames[edge.to])
             #expect(target.minX - source.maxX == TopicGraphLayout.columnGap)
-            #expect(edge.start == CGPoint(x: source.maxX, y: source.midY))
-            #expect(edge.end == CGPoint(x: target.minX, y: target.midY))
-            #expect(edge.segments.flatMap { $0.samples() }.allSatisfy { $0.x >= source.maxX && $0.x <= target.minX })
+            #expect(isOnEdge(edge.start, of: source))
+            #expect(isOnEdge(edge.end, of: target))
+            // Always forward: the link never runs left of where it leaves or right of where it arrives.
+            let xs = edge.segments.flatMap { $0.samples() }.map(\.x)
+            #expect(xs.allSatisfy { $0 >= edge.start.x - 0.5 && $0 <= edge.end.x + 0.5 })
         }
         let xs = layout.cards.map(\.frame.minX)
         #expect(xs == xs.sorted())
     }
 
-    @Test func linksAreSmoothCurvesBetweenRows() throws {
+    @Test func linksBetweenRowsAreSoftElbows() throws {
         var graph = TopicGraph(meetingId: UUID())
         let parent = try add(.new, at: 0, to: &graph)
-        try add(.side(parent), at: 10, to: &graph)
+        let side = try add(.side(parent), at: 10, to: &graph)
+        try add(.merge(parent), at: 20, to: &graph)
 
-        let curve = try #require(TopicGraphLayout(graph: graph).edges.first?.segments.first)
+        let layout = TopicGraphLayout(graph: graph)
+        let frames = Dictionary(uniqueKeysWithValues: layout.cards.map { ($0.id, $0.frame) })
+        let down = try #require(layout.edges.first { $0.to == side }?.segments.first)
+        let up = try #require(layout.edges.last?.segments.first)
+        let parentFrame = try #require(frames[parent]), sideFrame = try #require(frames[side])
 
-        #expect(curve.end.y > curve.start.y)
-        // Leaves and arrives horizontally: an S-curve, not a right angle.
-        #expect(curve.control1.y == curve.start.y)
-        #expect(curve.control2.y == curve.end.y)
-        #expect(abs(curve.endAngle) < 0.001)
+        // Into the side topic: down out of the parent's bottom, then in from the left.
+        #expect(down.start.y == parentFrame.maxY && down.start.x > parentFrame.midX)
+        #expect(down.end == CGPoint(x: sideFrame.minX, y: sideFrame.midY))
+        #expect(down.control1.x == down.start.x && down.control2.y == down.end.y)
+        // Back up: out of the right side, then up into the bottom of the next card.
+        let revisit = try #require(layout.cards.last?.frame)
+        #expect(up.start == CGPoint(x: sideFrame.maxX, y: sideFrame.midY))
+        #expect(up.end.y == revisit.maxY && up.end.x < revisit.midX)
+        #expect(up.control1.y == up.start.y && up.control2.x == up.end.x)
     }
 
     @Test func longMeetingsWrapOntoNewLinesWithinTheWidth() throws {
@@ -128,7 +139,8 @@ import Testing
         for edge in breaks {
             #expect(edge.segments.count == 5)
             for (a, b) in zip(edge.segments, edge.segments.dropFirst()) { #expect(a.end == b.start) }
-            #expect(abs(edge.endAngle - .pi / 2) < 0.001)
+            // Arrives straight down into the first card of the next line.
+            #expect(edge.segments.last.map { $0.control2.x == $0.end.x && $0.control2.y < $0.end.y } == true)
         }
         for edge in layout.edges {
             let interior = edge.segments.flatMap { $0.samples() }.dropFirst().dropLast()
@@ -281,5 +293,11 @@ import Testing
         try #require(try graph.apply(.init(route: route, points: [
             .init(track: 0, start: start, end: start + 1, text: "Topic at \(start)"),
         ])))
+    }
+
+    private func isOnEdge(_ point: CGPoint, of frame: CGRect) -> Bool {
+        let x = abs(point.x - frame.minX) < 0.5 || abs(point.x - frame.maxX) < 0.5
+        let y = abs(point.y - frame.minY) < 0.5 || abs(point.y - frame.maxY) < 0.5
+        return (x && point.y >= frame.minY && point.y <= frame.maxY) || (y && point.x >= frame.minX && point.x <= frame.maxX)
     }
 }

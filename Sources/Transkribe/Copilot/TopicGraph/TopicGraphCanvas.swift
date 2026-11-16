@@ -89,14 +89,13 @@ struct TopicGraphCanvas: View {
                     path.addCurve(to: segment.end, control1: segment.control1, control2: segment.control2)
                 }
                 let isHighlighted = touches?.edgeIds.contains(edge.id) == true
-                let opacity = touches == nil ? 0.8 : (isHighlighted ? 1 : 0.12)
+                // No arrowheads: every link runs forward in time, left to right and then down.
+                let opacity = touches == nil ? 0.7 : (isHighlighted ? 1 : 0.12)
                 let color = Self.color(for: edge.type).opacity(opacity)
                 let isDashed = edge.type == .return || edge.type == .merge
                 context.stroke(path, with: .color(color),
-                               style: StrokeStyle(lineWidth: isHighlighted ? 3.5 : 2.5, lineCap: .round,
+                               style: StrokeStyle(lineWidth: isHighlighted ? 3.5 : 2.75, lineCap: .round,
                                                   lineJoin: .round, dash: isDashed ? [7, 6] : []))
-                context.fill(Self.arrowhead(at: edge.end, angle: edge.endAngle, size: isHighlighted ? 11 : 9),
-                             with: .color(color))
             }
         }
         .allowsHitTesting(false)
@@ -110,15 +109,6 @@ struct TopicGraphCanvas: View {
         case .return: .indigo
         case .merge: .orange
         }
-    }
-
-    private static func arrowhead(at tip: CGPoint, angle: CGFloat, size: CGFloat) -> Path {
-        var path = Path()
-        path.move(to: tip)
-        path.addLine(to: CGPoint(x: tip.x - size * cos(angle - .pi / 7), y: tip.y - size * sin(angle - .pi / 7)))
-        path.addLine(to: CGPoint(x: tip.x - size * cos(angle + .pi / 7), y: tip.y - size * sin(angle + .pi / 7)))
-        path.closeSubpath()
-        return path
     }
 }
 
