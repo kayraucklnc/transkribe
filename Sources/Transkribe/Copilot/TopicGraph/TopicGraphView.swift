@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 import TranskribeCore
 
@@ -12,12 +11,10 @@ struct TopicGraphView: View {
     @State private var scene: TopicGraphScene?
     @State private var selectedTopicId: String?
     @State private var focusRequest = 0
-    /// The canvas width the graph wraps at.
-    @State private var width: CGFloat = 0
 
     private var controller: LiveTopicGraphController? { model.topicGraphs[transcript.id] }
     private var graph: TopicGraph? { controller?.graph ?? savedGraph }
-    /// Pending text changes many times a second and never moves a card, so the layout ignores it.
+    /// Pending text changes many times a second and never changes the timeline, so the timeline ignores it.
     private var structure: TopicGraph? { graph.map { var graph = $0; graph.draft = ""; return graph } }
     private var draft: String { (graph?.draft ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -38,13 +35,6 @@ struct TopicGraphView: View {
             }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background {
-                    GeometryReader { geometry in
-                        Color.clear
-                            .onAppear { width = geometry.size.width }
-                            .onChange(of: geometry.size.width) { _, newWidth in width = newWidth }
-                    }
-                }
         }
         .background(Theme.canvas)
         .inspector(isPresented: Binding(
@@ -69,21 +59,12 @@ struct TopicGraphView: View {
             savedGraph = result.graph
             loadError = result.error.map { "The saved topic graph is unavailable. \($0)" }
         }
-        .task(id: SceneKey(graph: structure, width: width.rounded())) {
+        .task(id: structure) {
             guard let structure else {
                 scene = nil
                 return
             }
-            guard width > 0 else { return }
-            // Resizing changes the width every point: wait for it to settle before laying out again.
-            if scene != nil {
-                try? await Task.sleep(for: .milliseconds(60))
-                guard !Task.isCancelled else { return }
-            }
-            let width = width - Self.scrollerWidth
-            let updated = await Task.detached(priority: .userInitiated) {
-                TopicGraphScene(graph: structure, width: width)
-            }.value
+            let updated = await Task.detached(priority: .userInitiated) { TopicGraphScene(graph: structure) }.value
             guard !Task.isCancelled else { return }
             scene = updated
         }
@@ -91,9 +72,9 @@ struct TopicGraphView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let scene, !scene.layout.cards.isEmpty {
-            TopicGraphCanvas(scene: scene, isLive: isLive, selectedTopicId: selectedTopicId,
-                             focusRequest: focusRequest) { selectedTopicId = $0 }
+        if let scene, !scene.timeline.rows.isEmpty {
+            TopicTimelineView(scene: scene, isLive: isLive, selectedTopicId: selectedTopicId,
+                              focusRequest: focusRequest) { selectedTopicId = $0 }
         } else if isLoading {
             ProgressView("Loading topic graph…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -106,7 +87,7 @@ struct TopicGraphView: View {
         }
     }
 
-    /// Still reading graph.json, or still laying out topics that already exist.
+    /// Still reading graph.json, or still building the timeline for topics that already exist.
     private var isLoading: Bool {
         if let graph { return !graph.topics.isEmpty }
         return !isLive && loadError == nil
@@ -130,7 +111,7 @@ struct TopicGraphView: View {
                     .lineLimit(1)
                     .help("The latest batch with a valid topic name. Batches without a name are excluded.")
             }
-            if scene?.layout.cards.isEmpty == false {
+            if scene?.timeline.rows.isEmpty == false {
                 Button { focusRequest += 1 } label: {
                     Label(isLive ? "Current topic" : "Latest topic", systemImage: "scope")
                 }
@@ -142,12 +123,6 @@ struct TopicGraphView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-    }
-
-    /// Always-visible scroll bars take space from the canvas; overlay scroll bars do not.
-    private static var scrollerWidth: CGFloat {
-        NSScroller.preferredScrollerStyle == .legacy
-            ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
     }
 
     private var emptyMessage: String {
@@ -184,27 +159,21 @@ struct TopicGraphListening: View {
     }
 }
 
-/// The layout depends on the graph without its pending text, and on the width it wraps at.
-private struct SceneKey: Equatable {
-    let graph: TopicGraph?
-    let width: CGFloat
-}
-
 struct TopicGraphScene: Sendable {
     let graph: TopicGraph
-    let layout: TopicGraphLayout
-    let hitRegions: [TopicGraphInteraction.Region]
+    let timeline: TopicTimeline
     let topics: [String: TopicGraphTopic]
     let points: [String: [TopicGraphPoint]]
+    let visitsByRow: [Int: [TopicTimeline.Visit]]
 
-    init(graph: TopicGraph, width: CGFloat) {
+    init(graph: TopicGraph) {
         self.graph = graph
-        layout = TopicGraphLayout(graph: graph, width: width)
-        hitRegions = TopicGraphInteraction.regions(in: layout)
+        timeline = TopicTimeline(graph: graph)
         topics = Dictionary(graph.topics.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         points = Dictionary(grouping: graph.points.sorted {
             let left = graph.meetingTime(for: $0), right = graph.meetingTime(for: $1)
             return left == right ? $0.track < $1.track : left < right
         }, by: \.topicId)
+        visitsByRow = Dictionary(grouping: timeline.visits, by: \.row)
     }
 }
