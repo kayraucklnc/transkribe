@@ -42,6 +42,12 @@ enum CalendarTitles {
         .sorted { $0.start < $1.start }
     }
 
+    /// A meeting with a call link that is on now, or starts within ten minutes (people join early).
+    static func meetingWithLinkOnNow(at date: Date = Date()) -> CalendarMeeting? {
+        upcomingMeetings(from: date, within: 10 * 60)
+            .first { $0.link != nil && $0.start <= date.addingTimeInterval(10 * 60) && $0.end >= date }
+    }
+
     /// Posted when any calendar on this Mac changes (an event added, moved, or synced in).
     static var changes: NotificationCenter.Notifications {
         NotificationCenter.default.notifications(named: .EKEventStoreChanged, object: store)

@@ -70,7 +70,7 @@ private struct CallSettingsTab: View {
                     Toggle(isOn: $calls.offersToRecord) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Offer to record it")
-                            Text("When Zoom, Teams, FaceTime, WhatsApp, Slack or a browser call starts using your microphone, a small card asks if you want to record. Nothing is recorded unless you say so.")
+                            Text("When Zoom, Teams, FaceTime, WhatsApp, Slack or a browser call starts using your microphone, a card by the notch asks if you want to record. Nothing is recorded unless you say so.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -112,6 +112,7 @@ private struct CallSettingsTab: View {
 
 private struct MeetingReminderSettings: View {
     @Environment(MeetingReminders.self) private var reminders
+    @Environment(CallMonitor.self) private var calls
     @Binding var calendarAllowed: Bool
     @State private var customMinutes = ""
 
@@ -119,6 +120,7 @@ private struct MeetingReminderSettings: View {
 
     var body: some View {
         @Bindable var reminders = reminders
+        @Bindable var calls = calls
         Section(title: "Meeting reminders") {
             Toggle(isOn: $reminders.isEnabled) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -173,6 +175,17 @@ private struct MeetingReminderSettings: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                Toggle(isOn: $calls.recordsCalendarMeetings) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Also record calendar meetings I join another way")
+                        Text("When a call starts during a meeting on your calendar that has a Meet, Zoom or Teams link, record it without asking.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if calendarAllowed {
+                    NextMeetingLine(meeting: reminders.next)
+                }
             }
         }
         .onAppear { calendarAllowed = reminders.calendarAllowed }
@@ -183,6 +196,29 @@ private struct MeetingReminderSettings: View {
               (0...MeetingReminderSchedule.maximumMinutes).contains(minutes) else { return }
         reminders.addReminder(minutesBefore: minutes)
         customMinutes = ""
+    }
+}
+
+/// Shows the calendar is connected: "Next: Weekly sync, in 40 min · Google Meet".
+private struct NextMeetingLine: View {
+    let meeting: CalendarMeeting?
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            if let meeting {
+                Label {
+                    Text("Next: \(meeting.title), \(MeetingCountdown.text(until: meeting.start, now: context.date))")
+                        + Text(meeting.link == nil ? " · no call link" : " · has a call link").foregroundStyle(.tertiary)
+                } icon: {
+                    Image(systemName: "calendar")
+                }
+            } else {
+                Label("No meetings in the next day.", systemImage: "calendar")
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
 }
 

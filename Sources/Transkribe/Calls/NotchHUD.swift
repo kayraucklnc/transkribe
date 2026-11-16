@@ -5,7 +5,7 @@ import TranskribeCore
 
 /// A small black island that grows out of the MacBook notch (or the top center of the screen):
 /// a red dot and a timer while recording, a clear "Recording" / "Saved" moment at start and stop,
-/// and meeting reminders with a Join button. Screen sharing doesn't see it.
+/// meeting reminders with a Join button, and the "record this call?" offer. Screen sharing doesn't see it.
 @Observable @MainActor
 final class NotchHUD {
     enum Announcement: Equatable {
@@ -19,11 +19,13 @@ final class NotchHUD {
         case recordingDetails
         case announcement(Announcement)
         case reminder(MeetingReminder)
+        /// A call started in this app; offer to record it.
+        case callPrompt(app: String)
 
         var showsCard: Bool {
             switch self {
             case .hidden, .pill: false
-            case .recordingDetails, .announcement, .reminder: true
+            case .recordingDetails, .announcement, .reminder, .callPrompt: true
             }
         }
     }
@@ -47,6 +49,7 @@ final class NotchHUD {
 
     let model: AppModel
     let reminders: MeetingReminders
+    let calls: CallMonitor
 
     static let announcementDuration: Duration = .seconds(2.8)
     static let detailsDuration: Duration = .seconds(6)
@@ -60,9 +63,10 @@ final class NotchHUD {
     private var resizeTask: Task<Void, Never>?
     private var screenObserver: NSObjectProtocol?
 
-    init(model: AppModel, reminders: MeetingReminders) {
+    init(model: AppModel, reminders: MeetingReminders, calls: CallMonitor) {
         self.model = model
         self.reminders = reminders
+        self.calls = calls
         showsRecording = UserDefaults.standard.object(forKey: Self.showsKey) as? Bool ?? true
         playsSounds = HUDSounds.isEnabled
     }
@@ -83,6 +87,7 @@ final class NotchHUD {
 
     var mode: Mode {
         if let announcement, showsRecording { return .announcement(announcement) }
+        if let app = calls.prompt { return .callPrompt(app: app) }
         if let reminder = reminders.current { return .reminder(reminder) }
         guard isRecording, showsRecording else { return .hidden }
         return isExpanded ? .recordingDetails : .pill
@@ -119,6 +124,7 @@ final class NotchHUD {
         withObservationTracking {
             _ = model.recordingState
             _ = reminders.current
+            _ = calls.prompt
         } onChange: { [weak self] in
             // Fires before the change lands; re-reading on the next turn sees the new value.
             Task { @MainActor in self?.observe() }
@@ -232,7 +238,7 @@ struct NotchGeometry: Equatable {
             return CGSize(width: notchWidth, height: topHeight)
         case .pill:
             return CGSize(width: hasNotch ? notchWidth + 2 * Self.wing : 2 * Self.wing + 12, height: topHeight)
-        case .recordingDetails, .announcement, .reminder:
+        case .recordingDetails, .announcement, .reminder, .callPrompt:
             return CGSize(width: max(Self.cardWidth, notchWidth + 2 * Self.wing), height: topHeight + Self.cardHeight)
         }
     }

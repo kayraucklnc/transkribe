@@ -73,9 +73,17 @@ struct NotchHUDView: View {
                     .font(.system(size: 26))
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(.white, .green)
+                    .frame(width: 34, height: 34)
             }, title: "Recording saved", subtitle: [title, Self.durationText(duration)].filter { !$0.isEmpty }.joined(separator: " · "))
         case .reminder(let reminder):
             ReminderCard(reminder: reminder, reminders: hud.reminders)
+        case .callPrompt(let app):
+            CardRow(icon: { RecordingBadge() }, title: "\(app) call", subtitle: "Record and transcribe it?") {
+                HStack(spacing: 6) {
+                    IslandButton(title: "Record", tint: Theme.record, action: hud.calls.recordCall)
+                    CloseButton(help: "Not this time", action: hud.calls.dismiss)
+                }
+            }
         case .recordingDetails:
             CardRow(icon: { RecordingBadge() }, title: "Recording", subtitle: hud.liveTitle) {
                 HStack(spacing: 8) {
@@ -124,15 +132,7 @@ private struct ReminderCard: View {
                 } else {
                     IslandButton(title: "Record", tint: Theme.record, action: reminders.recordNow)
                 }
-                Button(action: reminders.dismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .frame(width: 26, height: 26)
-                        .background(Color.white.opacity(0.12), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .help("Dismiss")
+                CloseButton(help: "Dismiss", action: reminders.dismiss)
             }
         }
     }
@@ -198,6 +198,24 @@ private struct IslandButton: View {
                 .background(tint, in: Capsule())
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct CloseButton: View {
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 26, height: 26)
+                .background(Color.white.opacity(0.12), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 
