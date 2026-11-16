@@ -22,4 +22,11 @@ public enum CallEndPolicy {
         if let scheduledEnd, now < scheduledEnd { return .keepUntil(scheduledEnd) }
         return .stop
     }
+
+    /// While a recording waits for the planned end (`keepUntil`), whether to stop now: the
+    /// planned end came, or the meeting tab is gone (you hung up, then closed it).
+    /// - Parameter meetingOpen: Whether the browser still has the meeting tab (nil when unknown).
+    public static func stopsWhileWaiting(now: Date, until end: Date, meetingOpen: Bool?) -> Bool {
+        meetingOpen == false || now >= end
+    }
 }

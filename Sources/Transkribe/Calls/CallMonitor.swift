@@ -46,6 +46,9 @@ final class CallMonitor {
     private static let joinWindow: TimeInterval = 15 * 60
     /// The calendar meeting whose link is open in the browser that started the call being offered.
     private var promptMeeting: CalendarMeeting?
+    /// The process that held the mic for the current call, kept after the mic goes quiet so a
+    /// recording waiting for the planned end can still see the meeting tab close.
+    private var callBrowserID: String?
 
     init(model: AppModel) {
         self.model = model
@@ -70,13 +73,16 @@ final class CallMonitor {
     }
 
     private func tick() {
-        // While a browser call runs, an open meeting tab gives the mic longer to come back.
-        let meetingOpen = watch.isInCall ? browserMeetings().map { !$0.isEmpty } : nil
+        // While a browser call runs, an open meeting tab gives the mic longer to come back, and a
+        // closed one ends it. After a quiet mic, a closed tab still stops a recording that's waiting.
+        let watchesBrowser = watch.isInCall || keepsRecordingUntil != nil
+        let meetingOpen = watchesBrowser ? browserMeetings().map { !$0.isEmpty } : nil
         if recordingForCall, !model.isRecording, model.recordingState == .idle {
             finishCall() // stopped by hand
         }
         switch watch.update(micApps: MicUsage.bundleIDs(), meetingOpen: meetingOpen) {
         case .started(let app)?:
+            callBrowserID = watch.activeBundleID
             if keepsRecordingUntil != nil {
                 keepsRecordingUntil = nil // the call came back; carry on
                 return
@@ -103,7 +109,8 @@ final class CallMonitor {
             case .keepUntil(let end): keepsRecordingUntil = end
             }
         case nil:
-            if let end = keepsRecordingUntil, Date() >= end {
+            if let end = keepsRecordingUntil,
+               CallEndPolicy.stopsWhileWaiting(now: Date(), until: end, meetingOpen: meetingOpen) {
                 stopForCallEnd()
             }
             if let joined = joinedMeeting, Date() > joined.until {
@@ -136,6 +143,7 @@ final class CallMonitor {
         recordingForCall = false
         recordedMeeting = nil
         keepsRecordingUntil = nil
+        callBrowserID = nil
         restart()
     }
 
@@ -188,9 +196,10 @@ final class CallMonitor {
         promptMeeting = nil
     }
 
-    /// Meetings open in the browser holding the call's mic; nil if it isn't a browser or can't be read.
+    /// Meetings open in the browser holding the call's mic (or that held it, while a recording waits
+    /// for the planned end); nil if it isn't a browser or can't be read.
     private func browserMeetings() -> [BrowserMeeting]? {
-        guard let id = watch.activeBundleID, let browser = Browsers.browser(for: id) else { return nil }
+        guard let id = watch.activeBundleID ?? callBrowserID, let browser = Browsers.browser(for: id) else { return nil }
         return BrowserTabs.meetings(in: browser)
     }
 
