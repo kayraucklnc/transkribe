@@ -24,8 +24,21 @@ public enum CallApps {
         "com.brave.Browser": "Brave",
     ]
 
+    /// Also matches an app's helper processes ("com.google.Chrome.helper" is Chrome): browsers
+    /// often capture the microphone from a helper, not the main app.
     public static func name(for bundleID: String) -> String? {
-        names[bundleID]
+        if let name = names[bundleID] { return name }
+        var parts = bundleID.split(separator: ".")
+        while parts.count > 2 {
+            parts.removeLast()
+            if let name = names[parts.joined(separator: ".")] { return name }
+        }
+        return nil
+    }
+
+    /// Browsers, where a call is a web page (Meet, Teams on the web) rather than its own app.
+    public static func isBrowser(_ name: String) -> Bool {
+        ["Chrome", "Safari", "Arc", "Firefox", "Edge", "Brave"].contains(name)
     }
 }
 

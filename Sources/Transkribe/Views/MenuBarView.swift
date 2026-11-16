@@ -71,11 +71,13 @@ struct MenuBarView: View {
 
 struct MenuBarLabel: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
 
     // Keep this static: a menu bar label that changes every second (like a running timer)
     // makes SwiftUI rebuild the status item in a loop that pins the CPU and leaks memory.
     // The timer lives inside the menu instead.
     var body: some View {
         Image(systemName: model.isRecording ? "record.circle.fill" : "waveform")
+            .onAppear { MainWindow.opener = { openWindow(id: "main") } }
     }
 }

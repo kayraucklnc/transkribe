@@ -29,6 +29,12 @@ final class CallMonitor {
     private var promptTask: Task<Void, Never>?
     /// The recording this monitor started for the current call, to stop when it ends.
     private var recordingForCall = false
+    /// A meeting joined from its reminder: the next call that starts is recorded under its name.
+    private var joinedMeeting: (meeting: CalendarMeeting, until: Date)?
+    /// The meeting the current recording is for, if it was started for one.
+    private var recordedMeetingID: CalendarMeeting.ID?
+    /// How long after Join the call may take to pick up the mic (a lobby, a Zoom update).
+    private static let joinWindow: TimeInterval = 15 * 60
     private let panel = CallPromptPanel()
 
     init(model: AppModel) {
@@ -45,7 +51,8 @@ final class CallMonitor {
 
     private func restart() {
         timer?.invalidate()
-        guard offersToRecord else { return }
+        timer = nil
+        guard offersToRecord || joinedMeeting != nil || recordingForCall else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -55,16 +62,26 @@ final class CallMonitor {
         switch watch.update(micApps: MicUsage.bundleIDs()) {
         case .started(let app)?:
             guard !model.isRecording, model.settings.completedOnboarding else { return }
-            show(prompt: app)
+            if let joined = joinedMeeting, Date() <= joined.until {
+                record(joined.meeting)
+            } else if offersToRecord {
+                show(prompt: app)
+            }
         case .ended?:
             dismiss()
-            if recordingForCall, stopsWithCall, model.isRecording {
+            // The call's real end, which may be well past the calendar's end time.
+            if recordingForCall, stopsWithCall || recordedMeetingID != nil, model.isRecording {
                 model.stopRecording()
                 model.showToast("Call ended · recording saved")
             }
             recordingForCall = false
+            recordedMeetingID = nil
+            restart()
         case nil:
-            break
+            if let joined = joinedMeeting, Date() > joined.until {
+                joinedMeeting = nil
+                restart()
+            }
         }
     }
 
@@ -74,6 +91,32 @@ final class CallMonitor {
         model.recordingSource = .both
         model.startRecording(title: event?.title)
         recordingForCall = true
+    }
+
+    /// Records the next call that starts as `meeting`, without asking. If a call app already has
+    /// the mic (you were in the lobby, or joined before clicking), recording starts now.
+    func recordNextCall(as meeting: CalendarMeeting) {
+        guard !model.isRecording else { return }
+        if watch.isInCall {
+            record(meeting)
+        } else {
+            joinedMeeting = (meeting, Date().addingTimeInterval(Self.joinWindow))
+            restart()
+        }
+    }
+
+    /// Whether the recording running now is for `meeting`.
+    func isRecording(_ meeting: CalendarMeeting) -> Bool {
+        recordedMeetingID == meeting.id
+    }
+
+    private func record(_ meeting: CalendarMeeting) {
+        dismiss()
+        joinedMeeting = nil
+        model.recordingSource = .both
+        model.startRecording(title: meeting.title)
+        recordingForCall = true
+        recordedMeetingID = meeting.id
     }
 
     func dismiss() {

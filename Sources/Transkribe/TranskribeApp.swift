@@ -39,6 +39,8 @@ struct TranskribeApp: App {
         Settings {
             SettingsView()
                 .environment(delegate.calls)
+                .environment(delegate.reminders)
+                .environment(delegate.hud)
                 .environment(delegate.dictation)
                 .environment(delegate.ai)
                 .environment(delegate.mcp)
@@ -68,12 +70,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor lazy var dictation = DictationController(model: model)
     @MainActor lazy var mcp = MCPServerController(model: model)
     @MainActor lazy var calls = CallMonitor(model: model)
+    @MainActor lazy var reminders = MeetingReminders(model: model, calls: calls)
+    @MainActor lazy var hud = NotchHUD(model: model, reminders: reminders)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
             dictation.installShortcut()
             dictation.warmUp()
             calls.start()
+            reminders.start()
+            hud.start()
             _ = mcp
         }
     }

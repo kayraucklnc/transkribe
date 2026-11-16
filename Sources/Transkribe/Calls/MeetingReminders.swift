@@ -1,0 +1,133 @@
+import AppKit
+import Observation
+import TranskribeCore
+
+/// Reminds you about calendar meetings at the times you choose ("10 min before", "5 min before"…)
+/// with a card by the notch. Join opens the call and records it once the call picks up the mic.
+@Observable @MainActor
+final class MeetingReminders {
+    var isEnabled: Bool {
+        didSet { UserDefaults.standard.set(isEnabled, forKey: Self.enabledKey); restart() }
+    }
+    /// Minutes before a meeting to remind, latest last. 0 is "at start".
+    var minutes: [Int] {
+        didSet {
+            UserDefaults.standard.set(minutes, forKey: Self.minutesKey)
+            schedule.setMinutes(minutes)
+        }
+    }
+    var recordsWhenJoining: Bool {
+        didSet { UserDefaults.standard.set(recordsWhenJoining, forKey: Self.recordKey) }
+    }
+
+    /// The reminder on screen now.
+    private(set) var current: MeetingReminder?
+    /// The next meeting today, for Settings ("Next: Weekly sync in 40 min").
+    private(set) var next: CalendarMeeting?
+
+    private static let enabledKey = "remindsAboutMeetings"
+    private static let minutesKey = "meetingReminderMinutes"
+    private static let recordKey = "recordsJoinedMeetings"
+    /// A reminder card goes away on its own this long after the meeting starts.
+    private static let cardLifetime: TimeInterval = 5 * 60
+    private static let refreshInterval: TimeInterval = 60
+
+    private unowned let model: AppModel
+    private unowned let calls: CallMonitor
+    private var schedule: MeetingReminderSchedule
+    private var meetings: [CalendarMeeting] = []
+    private var refreshedAt: Date = .distantPast
+    private var timer: Timer?
+    private var changesTask: Task<Void, Never>?
+
+    init(model: AppModel, calls: CallMonitor) {
+        self.model = model
+        self.calls = calls
+        let defaults = UserDefaults.standard
+        isEnabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
+        recordsWhenJoining = defaults.object(forKey: Self.recordKey) as? Bool ?? true
+        let saved = MeetingReminderSchedule.normalize(defaults.array(forKey: Self.minutesKey) as? [Int] ?? MeetingReminderSchedule.defaultMinutes)
+        minutes = saved
+        schedule = MeetingReminderSchedule(minutes: saved)
+    }
+
+    var calendarAllowed: Bool { CalendarTitles.isAllowed }
+
+    func start() {
+        restart()
+        changesTask = Task { [weak self] in
+            for await _ in CalendarTitles.changes {
+                self?.refreshedAt = .distantPast
+                self?.tick()
+            }
+        }
+    }
+
+    func requestCalendarAccess() async -> Bool {
+        let allowed = await CalendarTitles.requestAccess()
+        refreshedAt = .distantPast
+        tick()
+        return allowed
+    }
+
+    // MARK: - Actions
+
+    /// Opens the meeting link, and records the call once it starts.
+    func join() {
+        guard let meeting = current?.meeting else { return }
+        dismiss()
+        if let link = meeting.link { NSWorkspace.shared.open(link) }
+        if recordsWhenJoining { calls.recordNextCall(as: meeting) }
+    }
+
+    /// For meetings without a link (in person, a phone call): starts recording right away.
+    func recordNow() {
+        guard let meeting = current?.meeting else { return }
+        dismiss()
+        guard !model.isRecording else { return }
+        model.startRecording(title: meeting.title)
+    }
+
+    func dismiss() {
+        current = nil
+    }
+
+    func addReminder(minutesBefore value: Int) {
+        minutes = MeetingReminderSchedule.normalize(minutes + [value])
+    }
+
+    func removeReminder(minutesBefore value: Int) {
+        minutes = minutes.filter { $0 != value }
+    }
+
+    // MARK: - Timing
+
+    private func restart() {
+        timer?.invalidate()
+        timer = nil
+        guard isEnabled else { current = nil; return }
+        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+        }
+        tick()
+    }
+
+    private func tick(now: Date = Date()) {
+        guard isEnabled, calendarAllowed, model.settings.completedOnboarding else { return }
+        if now.timeIntervalSince(refreshedAt) >= Self.refreshInterval {
+            meetings = CalendarTitles.upcomingMeetings(from: now)
+            schedule.keep(only: meetings)
+            refreshedAt = now
+        }
+        next = meetings.first { $0.start > now }
+        if let shown = current, now > shown.meeting.start.addingTimeInterval(Self.cardLifetime)
+            || !meetings.contains(where: { $0.id == shown.meeting.id }) {
+            current = nil
+        }
+        guard let reminder = schedule.due(in: meetings, at: now) else { return }
+        // Don't interrupt the call you're recording with a reminder for the same meeting.
+        if model.isRecording, calls.isRecording(reminder.meeting) { return }
+        current = reminder
+        HUDSounds.play(.reminder)
+    }
+}
