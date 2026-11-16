@@ -191,7 +191,7 @@ final class NotchHUD {
         resizeTask?.cancel()
         if mode == .hidden {
             resizeTask = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(500))
+                try? await Task.sleep(for: IslandMotion.restTime)
                 guard !Task.isCancelled, let self, self.mode == .hidden else { return }
                 self.panel.hide()
             }
@@ -202,7 +202,7 @@ final class NotchHUD {
         panel.show(frame: geometry.frame(for: grown))
         guard grown != target else { return }
         resizeTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(500))
+            try? await Task.sleep(for: IslandMotion.restTime)
             guard !Task.isCancelled, let self else { return }
             self.panel.show(frame: self.geometry.frame(for: target))
         }

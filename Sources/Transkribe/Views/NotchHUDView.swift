@@ -2,15 +2,18 @@ import SwiftUI
 import TranskribeCore
 
 /// The black island by the notch. Its size comes from `NotchGeometry` so the window and the
-/// shape agree; SwiftUI only animates between sizes.
+/// shape agree; SwiftUI only animates between sizes, with the motion in `IslandMotion`.
 struct NotchHUDView: View {
     let hud: NotchHUD
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// What's on screen. It follows `hud.mode` with an animation picked for each change
+    /// (opening springs, closing settles), which a single `.animation` can't do.
+    @State private var mode: NotchHUD.Mode = .hidden
 
     var body: some View {
-        let mode = hud.mode
         let geometry = hud.geometry
         let size = geometry.size(for: mode)
+        let radius = mode.showsCard ? 22 : (geometry.hasNotch ? 10 : geometry.topHeight / 2)
         VStack(spacing: 0) {
             topRow(geometry: geometry)
                 .frame(height: geometry.topHeight)
@@ -18,18 +21,40 @@ struct NotchHUDView: View {
                 card(mode)
                     .padding(.horizontal, 16)
                     .frame(maxHeight: .infinity)
-                    .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+                    .id(Self.cardKey(mode))
+                    .transition(IslandMotion.content)
             }
         }
         .frame(width: size.width, height: size.height, alignment: .top)
-        .background(IslandShape(bottomRadius: mode.showsCard ? 22 : (geometry.hasNotch ? 10 : geometry.topHeight / 2)).fill(.black))
-        .clipShape(IslandShape(bottomRadius: mode.showsCard ? 22 : (geometry.hasNotch ? 10 : geometry.topHeight / 2)))
-        .opacity(mode == .hidden ? 0 : 1)
+        .background(IslandShape(bottomRadius: radius).fill(.black))
+        .clipShape(IslandShape(bottomRadius: radius))
+        // With a notch, the island sinks back into it; without one, it fades as it shrinks.
+        .opacity(mode == .hidden && !geometry.hasNotch ? 0 : 1)
         .contentShape(Rectangle())
         .onHover { hud.isHovering = $0 }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.8), value: mode)
         .environment(\.colorScheme, .dark)
+        .onAppear { mode = hud.mode }
+        .onChange(of: hud.mode) { old, new in
+            withAnimation(IslandMotion.animation(from: old, to: new, in: geometry, reduceMotion: reduceMotion)) {
+                mode = new
+            }
+        }
+    }
+
+    /// Different cards cross-fade; the same card (a countdown ticking) updates in place.
+    private static func cardKey(_ mode: NotchHUD.Mode) -> String {
+        switch mode {
+        case .hidden: "hidden"
+        case .pill: "pill"
+        case .recordingDetails: "details"
+        case .announcement(.started): "started"
+        case .announcement(.stopped): "stopped"
+        case .reminder(let reminder): "reminder-\(reminder.meeting.id)"
+        case .callPrompt: "prompt"
+        case .callSeemsOver: "over"
+        case .wrapUp(let meeting): "wrap-\(meeting.id)"
+        }
     }
 
     /// The row level with the notch: a red dot left of it and the timer right of it.
@@ -47,12 +72,14 @@ struct NotchHUDView: View {
                     .monospacedDigit()
                     // Orange until the next meeting starts, once you've been nudged to wrap up.
                     .foregroundStyle(hud.reminders.upNext == nil ? Color.white.opacity(0.92) : Color.orange)
+                    .animation(.easeInOut(duration: 0.6), value: hud.reminders.upNext == nil)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .frame(width: NotchGeometry.wing)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
+            .transition(IslandMotion.wings)
             .onTapGesture { hud.isExpanded.toggle() }
             .help("Recording · click for details")
             .accessibilityElement(children: .combine)
@@ -67,7 +94,7 @@ struct NotchHUDView: View {
     private func card(_ mode: NotchHUD.Mode) -> some View {
         switch mode {
         case .announcement(.started(let title)):
-            CardRow(icon: { RecordingBadge() }, title: "Recording", subtitle: title)
+            CardRow(icon: { RecordingBadge().modifier(PopIn()) }, title: "Recording", subtitle: title)
         case .announcement(.stopped(let title, let duration)):
             CardRow(icon: {
                 Image(systemName: "checkmark.circle.fill")
@@ -75,6 +102,7 @@ struct NotchHUDView: View {
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(.white, .green)
                     .frame(width: 34, height: 34)
+                    .modifier(PopIn())
             }, title: "Recording saved", subtitle: [title, Self.durationText(duration)].filter { !$0.isEmpty }.joined(separator: " · "))
         case .reminder(let reminder):
             ReminderCard(reminder: reminder, reminders: hud.reminders)
@@ -152,6 +180,8 @@ private struct WrapUpLine: View {
                     Text(MeetingCountdown.text(until: meeting.start, now: context.date))
                         .foregroundStyle(.orange)
                         .fixedSize()
+                        .contentTransition(.numericText(countsDown: true))
+                        .animation(.snappy, value: MeetingCountdown.text(until: meeting.start, now: context.date))
                 }
                 .font(.system(size: 12))
                 .frame(maxWidth: .infinity)
@@ -220,6 +250,8 @@ private struct CardRow<Icon: View, Accessory: View>: View {
                         let soon = countdownTo.timeIntervalSince(context.date) < 60
                         Text(MeetingCountdown.text(until: countdownTo, now: context.date))
                             .font(.system(size: 11, weight: .medium))
+                            .contentTransition(.numericText(countsDown: true))
+                            .animation(.snappy, value: MeetingCountdown.text(until: countdownTo, now: context.date))
                             .foregroundStyle(soon ? Color.orange : Color.white.opacity(0.6))
                     }
                 } else if let subtitle, !subtitle.isEmpty {
