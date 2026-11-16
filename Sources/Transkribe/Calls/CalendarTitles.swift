@@ -48,6 +48,14 @@ enum CalendarTitles {
             .first { $0.link != nil && $0.start <= date.addingTimeInterval(10 * 60) && $0.end >= date }
     }
 
+    /// Today's meeting whose call link is the meeting open in the browser (same Meet code or Zoom number),
+    /// even if you join it at a different time than planned.
+    static func meeting(matching tab: BrowserMeeting) -> CalendarMeeting? {
+        upcomingMeetings(from: Date(), within: 12 * 3600).first { meeting in
+            meeting.link.map(tab.matches(link:)) ?? false
+        }
+    }
+
     /// Posted when any calendar on this Mac changes (an event added, moved, or synced in).
     static var changes: NotificationCenter.Notifications {
         NotificationCenter.default.notifications(named: .EKEventStoreChanged, object: store)

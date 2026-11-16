@@ -32,6 +32,8 @@
     <string>Transkribe adds the to-dos from your conversations to Reminders when you ask it to.</string>
     <key>NSContactsUsageDescription</key>
     <string>Transkribe looks up people in your Contacts so you can see every conversation you've had with them.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Transkribe looks at your browser's open tabs for a Meet, Zoom or Teams meeting, so recording follows the real meeting. It keeps nothing.</string>
     <key>NSScreenCaptureUsageDescription</key>
     <string>Transkribe records the audio your Mac plays (calls, meetings, videos) so it can transcribe it. Nothing on screen is recorded.</string>
     <key>CFBundleDocumentTypes</key>

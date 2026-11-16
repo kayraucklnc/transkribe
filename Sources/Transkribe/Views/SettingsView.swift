@@ -102,6 +102,7 @@ private struct CallSettingsTab: View {
                     }
                 }
                 MeetingReminderSettings(calendarAllowed: $calendarAllowed)
+                BrowserAccessSettings()
                 RecordingStatusSettings()
             }
             .toggleStyle(.switch)
@@ -241,6 +242,56 @@ private struct ReminderChip: View {
         .padding(.trailing, 6)
         .padding(.vertical, 4)
         .background(Color.primary.opacity(0.07), in: Capsule())
+    }
+}
+
+/// Which installed browsers Transkribe can see meeting tabs in, with a button for each one that can't yet.
+private struct BrowserAccessSettings: View {
+    @Environment(PermissionCenter.self) private var permissions
+    @State private var access: [String: BrowserTabs.Access] = [:]
+
+    private var installed: [Browser] {
+        Browsers.all.filter(BrowserTabs.isInstalled)
+    }
+
+    var body: some View {
+        Section(title: "Browsers") {
+            Text("For calls in a browser, Transkribe looks for the meeting tab so the recording follows the real meeting and gets the right name. Firefox, Zen and similar browsers use Accessibility; the others ask once.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(installed, id: \.bundleID) { browser in
+                HStack {
+                    Text(browser.name)
+                    Spacer()
+                    status(for: browser)
+                }
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                access = Dictionary(uniqueKeysWithValues: installed.map { ($0.bundleID, BrowserTabs.access(to: $0)) })
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func status(for browser: Browser) -> some View {
+        switch access[browser.bundleID] {
+        case .allowed?:
+            Label(browser.needsAutomation ? "Allowed" : "Allowed (Accessibility)", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.callout)
+        case .denied?:
+            Button("Open Settings") { permissions.openSettings(.browser(bundleID: browser.bundleID)) }
+        default:
+            Button("Allow") {
+                Task {
+                    await permissions.request(browser.needsAutomation ? .browser(bundleID: browser.bundleID) : .accessibility)
+                    access[browser.bundleID] = BrowserTabs.access(to: browser)
+                }
+            }
+        }
     }
 }
 

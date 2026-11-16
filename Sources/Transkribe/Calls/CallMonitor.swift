@@ -41,6 +41,8 @@ final class CallMonitor {
     private var recordedMeetingID: CalendarMeeting.ID?
     /// How long after Join the call may take to pick up the mic (a lobby, a Zoom update).
     private static let joinWindow: TimeInterval = 15 * 60
+    /// The calendar meeting whose link is open in the browser that started the call being offered.
+    private var promptMeeting: CalendarMeeting?
 
     init(model: AppModel) {
         self.model = model
@@ -65,15 +67,20 @@ final class CallMonitor {
     }
 
     private func tick() {
-        switch watch.update(micApps: MicUsage.bundleIDs()) {
+        // While a browser call runs, an open meeting tab gives the mic longer to come back.
+        let meetingOpen = watch.isInCall ? browserMeetings().map { !$0.isEmpty } : nil
+        switch watch.update(micApps: MicUsage.bundleIDs(), meetingOpen: meetingOpen) {
         case .started(let app)?:
             guard !model.isRecording, model.settings.completedOnboarding else { return }
+            let tab = browserMeetings()?.first
+            let scheduled = tab.flatMap(CalendarTitles.meeting(matching:))
             if let joined = joinedMeeting, Date() <= joined.until {
                 record(joined.meeting)
-            } else if recordsCalendarMeetings, let meeting = CalendarTitles.meetingWithLinkOnNow() {
+            } else if recordsCalendarMeetings, let meeting = scheduled ?? CalendarTitles.meetingWithLinkOnNow() {
                 record(meeting)
             } else if offersToRecord {
-                show(prompt: app)
+                promptMeeting = scheduled
+                show(prompt: tab?.service.rawValue ?? app)
             }
         case .ended?:
             dismiss()
@@ -94,6 +101,10 @@ final class CallMonitor {
     }
 
     func recordCall() {
+        if let meeting = promptMeeting {
+            record(meeting)
+            return
+        }
         dismiss()
         let event = usesCalendar ? CalendarTitles.currentEvent() : nil
         model.recordingSource = .both
@@ -130,6 +141,13 @@ final class CallMonitor {
     func dismiss() {
         promptTask?.cancel()
         prompt = nil
+        promptMeeting = nil
+    }
+
+    /// Meetings open in the browser holding the call's mic; nil if it isn't a browser or can't be read.
+    private func browserMeetings() -> [BrowserMeeting]? {
+        guard let id = watch.activeBundleID, let browser = Browsers.browser(for: id) else { return nil }
+        return BrowserTabs.meetings(in: browser)
     }
 
     private func show(prompt app: String) {

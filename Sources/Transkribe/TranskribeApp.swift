@@ -9,6 +9,7 @@ struct TranskribeApp: App {
     var body: some Scene {
         Window("Transkribe", id: "main") {
             RootView()
+                .environment(delegate.permissions)
                 .environment(delegate.dictation)
                 .environment(delegate.model)
                 .environment(delegate.player)
@@ -39,6 +40,7 @@ struct TranskribeApp: App {
         Settings {
             SettingsView()
                 .environment(delegate.calls)
+                .environment(delegate.permissions)
                 .environment(delegate.reminders)
                 .environment(delegate.hud)
                 .environment(delegate.dictation)
@@ -70,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor lazy var dictation = DictationController(model: model)
     @MainActor lazy var mcp = MCPServerController(model: model)
     @MainActor lazy var calls = CallMonitor(model: model)
+    @MainActor lazy var permissions = PermissionCenter()
     @MainActor lazy var reminders = MeetingReminders(model: model, calls: calls)
     @MainActor lazy var hud = NotchHUD(model: model, reminders: reminders, calls: calls)
 

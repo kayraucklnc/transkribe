@@ -4,7 +4,13 @@ import TranskribeCore
 /// One window, two places: the library and a conversation. No sidebar.
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(PermissionCenter.self) private var permissions
     @State private var isDropTargeted = false
+
+    /// Setup is done but a permission is missing: the app waits until it's allowed.
+    private var needsPermissions: Bool {
+        model.settings.completedOnboarding && !permissions.allGranted
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -37,8 +43,15 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.5), value: model.settings.completedOnboarding)
+        .overlay {
+            if needsPermissions {
+                PermissionsGate()
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.4), value: needsPermissions)
         // Nothing to search or click in the toolbar until setup is done.
-        .toolbar(model.settings.completedOnboarding ? .visible : .hidden, for: .windowToolbar)
+        .toolbar(model.settings.completedOnboarding && !needsPermissions ? .visible : .hidden, for: .windowToolbar)
         .overlay(alignment: .top) {
             if let toast = model.toast {
                 Toast(message: toast)

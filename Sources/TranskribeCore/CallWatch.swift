@@ -1,6 +1,6 @@
 import Foundation
 
-/// Apps people take calls in, by bundle identifier.
+/// Apps people take calls in, by bundle identifier. Browsers (for Meet and other web calls) come from `Browsers`.
 public enum CallApps {
     static let names: [String: String] = [
         "us.zoom.xos": "Zoom",
@@ -15,18 +15,12 @@ public enum CallApps {
         "com.skype.skype": "Skype",
         "ru.keepcoder.Telegram": "Telegram",
         "org.whispersystems.signal-desktop": "Signal",
-        // Google Meet and other web calls run in the browser.
-        "com.google.Chrome": "Chrome",
-        "com.apple.Safari": "Safari",
-        "company.thebrowser.Browser": "Arc",
-        "org.mozilla.firefox": "Firefox",
-        "com.microsoft.edgemac": "Edge",
-        "com.brave.Browser": "Brave",
     ]
 
     /// Also matches an app's helper processes ("com.google.Chrome.helper" is Chrome): browsers
     /// often capture the microphone from a helper, not the main app.
     public static func name(for bundleID: String) -> String? {
+        if let browser = Browsers.browser(for: bundleID) { return browser.name }
         if let name = names[bundleID] { return name }
         var parts = bundleID.split(separator: ".")
         while parts.count > 2 {
@@ -35,15 +29,11 @@ public enum CallApps {
         }
         return nil
     }
-
-    /// Browsers, where a call is a web page (Meet, Teams on the web) rather than its own app.
-    public static func isBrowser(_ name: String) -> Bool {
-        ["Chrome", "Safari", "Arc", "Firefox", "Edge", "Brave"].contains(name)
-    }
 }
 
 /// Turns "which apps are using the microphone right now" into call started / ended moments,
-/// ignoring brief mic use and short drops (mute, a network hiccup).
+/// ignoring brief mic use and short drops (a device switch, a network hiccup). Meeting apps keep
+/// the mic open while you're muted (that's how they warn "you're muted"), so mute isn't a drop.
 public struct CallWatch: Sendable {
     public enum Event: Equatable, Sendable {
         case started(app: String)
@@ -52,17 +42,24 @@ public struct CallWatch: Sendable {
 
     static let startAfter: TimeInterval = 3
     static let endAfter: TimeInterval = 15
+    /// A browser call whose meeting tab is still open gets longer to pick the mic back up.
+    static let endAfterWithMeetingOpen: TimeInterval = 45
 
     private var candidateSince: Date?
     private var activeApp: String?
+    /// The process holding the mic for the call, to know which browser to look in.
+    public private(set) var activeBundleID: String?
     private var silentSince: Date?
 
     public init() {}
 
     public var isInCall: Bool { activeApp != nil }
 
-    public mutating func update(micApps bundleIDs: [String], at now: Date = Date()) -> Event? {
-        let app = bundleIDs.lazy.compactMap(CallApps.name(for:)).first
+    /// `meetingOpen` is whether the call's browser still has a meeting tab open (nil when unknown
+    /// or not a browser call).
+    public mutating func update(micApps bundleIDs: [String], meetingOpen: Bool? = nil, at now: Date = Date()) -> Event? {
+        let match = bundleIDs.lazy.compactMap { id in CallApps.name(for: id).map { (id, $0) } }.first
+        let app = match?.1
         if let active = activeApp {
             if app != nil {
                 silentSince = nil
@@ -70,8 +67,10 @@ public struct CallWatch: Sendable {
             }
             let since = silentSince ?? now
             silentSince = since
-            guard now.timeIntervalSince(since) >= Self.endAfter else { return nil }
+            let grace = meetingOpen == true ? Self.endAfterWithMeetingOpen : Self.endAfter
+            guard now.timeIntervalSince(since) >= grace else { return nil }
             activeApp = nil
+            activeBundleID = nil
             silentSince = nil
             candidateSince = nil
             return .ended(app: active)
@@ -84,6 +83,7 @@ public struct CallWatch: Sendable {
         candidateSince = since
         guard now.timeIntervalSince(since) >= Self.startAfter else { return nil }
         activeApp = app
+        activeBundleID = match?.0
         return .started(app: app)
     }
 }
