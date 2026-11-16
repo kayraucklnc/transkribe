@@ -9,35 +9,14 @@ struct MenuBarView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            if case .recording(let since) = model.recordingState {
-                HStack(spacing: 10) {
-                    Circle().fill(Theme.record).frame(width: 8, height: 8)
-                    ElapsedTime(since: since)
-                        .font(.system(.title3, design: .rounded).weight(.medium))
-                        .monospacedDigit()
-                    Spacer()
-                    WaveformView(levels: Array(model.levels.suffix(20)))
-                        .frame(width: 80, height: 22)
-                }
-                Button(action: model.stopRecording) {
-                    Label("Stop & Transcribe", systemImage: "stop.fill").frame(maxWidth: .infinity)
-                }
-                .controlSize(.large)
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.record)
-            } else {
-                Picker("Source", selection: Binding(get: { model.recordingSource }, set: { model.recordingSource = $0 })) {
-                    ForEach(RecordingSource.allCases) { Text($0.shortLabel).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                Button { model.startRecording() } label: {
-                    Label("Start Recording", systemImage: "record.circle").frame(maxWidth: .infinity)
-                }
-                .controlSize(.large)
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.record)
-                .disabled(model.recordingState != .idle)
+            // Both layouts stay in place and only the active one shows, so the menu keeps one
+            // size. A MenuBarExtra window resizes to fit its content, and resizing it while the
+            // level meter redraws crashed AppKit ("Update Constraints in Window" loop).
+            ZStack {
+                recordingControls
+                    .visible(isRecording)
+                idleControls
+                    .visible(!isRecording)
             }
             Button { dictation.start() } label: {
                 HStack {
@@ -66,6 +45,67 @@ struct MenuBarView: View {
         }
         .padding(14)
         .frame(width: 280)
+    }
+
+    private var recordingSince: Date? {
+        if case .recording(let since) = model.recordingState { return since }
+        return nil
+    }
+
+    private var isRecording: Bool { recordingSince != nil }
+
+    private var recordingControls: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 10) {
+                Circle().fill(Theme.record).frame(width: 8, height: 8)
+                Group {
+                    if let since = recordingSince {
+                        ElapsedTime(since: since)
+                    } else {
+                        // Holds the timer's place while hidden, without a ticking timeline.
+                        Text(TranscriptFormatter.timestamp(0))
+                    }
+                }
+                .font(.system(.title3, design: .rounded).weight(.medium))
+                .monospacedDigit()
+                Spacer()
+                WaveformView(levels: isRecording ? Array(model.levels.suffix(20)) : [])
+                    .frame(width: 80, height: 22)
+            }
+            Button(action: model.stopRecording) {
+                Label("Stop & Transcribe", systemImage: "stop.fill").frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.record)
+        }
+    }
+
+    private var idleControls: some View {
+        VStack(spacing: 14) {
+            Picker("Source", selection: Binding(get: { model.recordingSource }, set: { model.recordingSource = $0 })) {
+                ForEach(RecordingSource.allCases) { Text($0.shortLabel).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            Button { model.startRecording() } label: {
+                Label("Start Recording", systemImage: "record.circle").frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.record)
+            .disabled(model.recordingState != .idle)
+        }
+    }
+}
+
+private extension View {
+    /// Shows or hides the view but always keeps its space, so the layout never changes size.
+    func visible(_ isVisible: Bool) -> some View {
+        opacity(isVisible ? 1 : 0)
+            .allowsHitTesting(isVisible)
+            .disabled(!isVisible)
+            .accessibilityHidden(!isVisible)
     }
 }
 
