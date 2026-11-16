@@ -42,7 +42,7 @@ struct TopicGraphDetails: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
-                .padding(.bottom, 80)
+                .padding(.bottom, ConversationView.bottomBarClearance)
             }
         }
         .background(Theme.canvas)

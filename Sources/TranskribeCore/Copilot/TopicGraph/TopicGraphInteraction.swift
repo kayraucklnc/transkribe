@@ -28,7 +28,7 @@ public enum TopicGraphInteraction {
     }
 
     public static func regions(in layout: TopicGraphLayout) -> [Region] {
-        layout.cards.map { Region(target: .topic($0.id), frame: $0.frame) }
+        layout.cards.map { Region(target: .topic($0.topicId), frame: $0.frame) }
     }
 
     /// Includes the topic, its direct neighbours, and its incoming and outgoing edges.

@@ -5,137 +5,110 @@ struct TopicGraphCanvas: View {
     let scene: TopicGraphScene
     let isLive: Bool
     let selectedTopicId: String?
+    /// Changes when the user asks to see the current topic.
+    let focusRequest: Int
     let onSelect: (String) -> Void
     @State private var hoveredTopicId: String?
 
     var body: some View {
-        let highlighted = hoveredTopicId.map { TopicGraphInteraction.touches(topicId: $0, in: scene.graph) }
         ScrollViewReader { proxy in
-            VStack(spacing: 0) {
-                GeometryReader { geometry in
-                    ScrollView([.horizontal, .vertical]) {
-                        ZStack(alignment: .topLeading) {
-                            edges(touches: highlighted)
-                            ForEach(scene.layout.cards) { card in
-                                if let topic = scene.topics[card.id] {
-                                    Button { onSelect(card.id) } label: {
-                                        TopicGraphCard(topic: topic,
-                                            pointCount: scene.points[card.id]?.count ?? 0,
-                                            kindCounts: scene.kindCounts[card.id] ?? [:],
-                                            isCurrent: card.id == scene.graph.currentTopicId, isLive: isLive,
-                                            isHighlighted: selectedTopicId == card.id || highlighted?.topicIds.contains(card.id) == true)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .frame(width: card.frame.width, height: card.frame.height)
-                                    .contentShape(RoundedRectangle(cornerRadius: 14))
-                                    .opacity(highlighted.map { $0.topicIds.contains(card.id) ? 1 : 0.22 } ?? 1)
-                                    .accessibilityValue(selectedTopicId == card.id ? "Selected" : "")
-                                    .id(card.id)
-                                    .position(x: card.frame.midX, y: card.frame.midY)
-                                }
-                            }
-                            if let draft = scene.layout.draftCard {
-                                draftCard
-                                    .frame(width: draft.frame.width, height: draft.frame.height)
-                                    .opacity(hoveredTopicId == nil ? 1 : 0.22)
-                                    .position(x: draft.frame.midX, y: draft.frame.midY)
-                            }
-                        }
-                        .frame(width: max(scene.layout.size.width, geometry.size.width),
-                               height: max(scene.layout.size.height, geometry.size.height), alignment: .topLeading)
-                        .onContinuousHover { phase in
-                            switch phase {
-                            case .active(let location):
-                                if case .topic(let id) = TopicGraphInteraction.hitTest(at: location, regions: scene.hitRegions) {
-                                    hoveredTopicId = id
-                                } else {
-                                    hoveredTopicId = nil
-                                }
-                            case .ended:
-                                hoveredTopicId = nil
-                            }
-                        }
-                        .onChange(of: scene.layout) { _, _ in hoveredTopicId = nil }
-                    }
-                }
-                HStack(spacing: 16) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 16) {
-                            Label("Shift", systemImage: "arrow.right")
-                            Label("Side topic", systemImage: "arrow.turn.down.right")
-                            Label("Return / merge", systemImage: "arrow.uturn.backward")
-                        }
-                        Text("Scroll to explore")
-                    }
-                    Spacer(minLength: 0)
-                    Button(isLive ? "Current topic" : "Latest topic") {
-                        if let id = scene.graph.currentTopicId {
-                            withAnimation(Theme.spring) { proxy.scrollTo(id, anchor: .center) }
-                        }
+            // The layout wraps to the pane width, so only the height scrolls.
+            ScrollView(.vertical) {
+                graph
+                    .frame(width: scene.layout.size.width, height: scene.layout.size.height, alignment: .topLeading)
+                    // Room to scroll the last line above the player or recording bar.
+                    .padding(.bottom, ConversationView.bottomBarClearance)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .onAppear { if isLive { showCurrent(proxy, animated: false) } }
+            .onChange(of: scene.layout.currentCardId) { _, _ in if isLive { showCurrent(proxy) } }
+            .onChange(of: focusRequest) { _, _ in showCurrent(proxy) }
+        }
+    }
+
+    private var graph: some View {
+        let highlighted = hoveredTopicId.map { TopicGraphInteraction.touches(topicId: $0, in: scene.graph) }
+        return ZStack(alignment: .topLeading) {
+            edges(touches: highlighted)
+            ForEach(scene.layout.cards) { card in
+                if let topic = scene.topics[card.topicId] {
+                    Button { onSelect(card.topicId) } label: {
+                        TopicGraphCard(topic: topic, revisit: card.revisit,
+                                       parentLabel: topic.parentId.flatMap { scene.topics[$0]?.label },
+                                       isCurrent: card.id == scene.layout.currentCardId, isLive: isLive,
+                                       isSelected: selectedTopicId == card.topicId, isCompact: card.isCompact)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
+                    .frame(width: card.frame.width, height: card.frame.height)
+                    .contentShape(RoundedRectangle(cornerRadius: card.isCompact ? 10 : 14))
+                    .opacity(highlighted.map { $0.topicIds.contains(card.topicId) ? 1 : 0.25 } ?? 1)
+                    .id(card.id)
+                    .position(x: card.frame.midX, y: card.frame.midY)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 90)
             }
+        }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let location):
+                if case .topic(let id) = TopicGraphInteraction.hitTest(at: location, regions: scene.hitRegions) {
+                    hoveredTopicId = id
+                } else {
+                    hoveredTopicId = nil
+                }
+            case .ended:
+                hoveredTopicId = nil
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: hoveredTopicId)
+    }
+
+    private func showCurrent(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        guard let id = scene.layout.currentCardId else { return }
+        if animated {
+            withAnimation(Theme.spring) { proxy.scrollTo(id, anchor: .center) }
+        } else {
+            proxy.scrollTo(id, anchor: .center)
         }
     }
 
     private func edges(touches: TopicGraphInteraction.Touches?) -> some View {
         Canvas { context, _ in
             for edge in scene.layout.edges {
-                guard let start = edge.waypoints.first, let tip = edge.waypoints.last,
-                      let previous = edge.waypoints.dropLast().last else { continue }
                 var path = Path()
-                path.move(to: start)
-                for point in edge.waypoints.dropFirst() { path.addLine(to: point) }
-                let color: Color = switch edge.type {
-                case .shift: .secondary
-                case .branch: .teal
-                case .return: .indigo
-                case .merge: .orange
+                path.move(to: edge.start)
+                for segment in edge.segments {
+                    path.addCurve(to: segment.end, control1: segment.control1, control2: segment.control2)
                 }
                 let isHighlighted = touches?.edgeIds.contains(edge.id) == true
-                let opacity = touches == nil ? 0.65 : (isHighlighted ? 1.0 : 0.12)
-                let lineWidth: CGFloat = isHighlighted ? 2.5 : 1.5
-                context.stroke(path, with: .color(color.opacity(opacity)),
-                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round,
-                                       dash: edge.type == .return || edge.type == .merge ? [5, 4] : []))
-                let angle = atan2(tip.y - previous.y, tip.x - previous.x)
-                var arrow = Path()
-                arrow.move(to: CGPoint(x: tip.x - 7 * cos(angle - .pi / 6),
-                                      y: tip.y - 7 * sin(angle - .pi / 6)))
-                arrow.addLine(to: tip)
-                arrow.addLine(to: CGPoint(x: tip.x - 7 * cos(angle + .pi / 6),
-                                         y: tip.y - 7 * sin(angle + .pi / 6)))
-                context.stroke(arrow, with: .color(color.opacity(opacity)),
-                               style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                let opacity = touches == nil ? 0.8 : (isHighlighted ? 1 : 0.12)
+                let color = Self.color(for: edge.type).opacity(opacity)
+                let isDashed = edge.type == .return || edge.type == .merge
+                context.stroke(path, with: .color(color),
+                               style: StrokeStyle(lineWidth: isHighlighted ? 3.5 : 2.5, lineCap: .round,
+                                                  lineJoin: .round, dash: isDashed ? [7, 6] : []))
+                context.fill(Self.arrowhead(at: edge.end, angle: edge.endAngle, size: isHighlighted ? 11 : 9),
+                             with: .color(color))
             }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
-    private var draftCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Draft · listening", systemImage: "waveform")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.accentColor)
-            Text(scene.graph.draft)
-                .font(.callout)
-                .lineLimit(4)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    static func color(for type: TopicEdgeType) -> Color {
+        switch type {
+        case .shift: .secondary
+        case .branch: .teal
+        case .return: .indigo
+        case .merge: .orange
         }
-        .padding(16)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14)
-            .strokeBorder(Color.accentColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
-        .opacity(0.6)
-        .accessibilityElement(children: .combine)
-        .help(scene.graph.draft)
+    }
+
+    private static func arrowhead(at tip: CGPoint, angle: CGFloat, size: CGFloat) -> Path {
+        var path = Path()
+        path.move(to: tip)
+        path.addLine(to: CGPoint(x: tip.x - size * cos(angle - .pi / 7), y: tip.y - size * sin(angle - .pi / 7)))
+        path.addLine(to: CGPoint(x: tip.x - size * cos(angle + .pi / 7), y: tip.y - size * sin(angle + .pi / 7)))
+        path.closeSubpath()
+        return path
     }
 }

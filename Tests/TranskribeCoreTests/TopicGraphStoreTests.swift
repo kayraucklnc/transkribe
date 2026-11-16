@@ -36,14 +36,25 @@ import Testing
         #expect(replaced.graph == graph)
     }
 
-    @Test func missingMalformedOrUnsupportedFilesReturnAnEmptyGraphAndAnError() throws {
+    @Test func meetingsWithoutAGraphFileLoadAnEmptyGraphWithoutAnError() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = TopicGraphStore(rootDirectory: root)
         let meetingId = UUID()
+        try FileManager.default.createDirectory(at: store.fileURL(for: meetingId).deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+
         let missing = store.load(meetingId: meetingId)
+
         #expect(missing.graph == TopicGraph(meetingId: meetingId))
-        #expect(missing.error?.isEmpty == false)
+        #expect(missing.error == nil)
+    }
+
+    @Test func malformedOrUnsupportedFilesReturnAnEmptyGraphAndAnError() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = TopicGraphStore(rootDirectory: root)
+        let meetingId = UUID()
 
         var graph = TopicGraph(meetingId: meetingId)
         try graph.apply(.init(route: .new, points: [.init(track: 0, start: 1, end: 3, text: "Topic")]))

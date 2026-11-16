@@ -12,6 +12,10 @@ struct ConversationView: View {
     @State private var isJoining = false
     @State private var showsTopicGraph = false
 
+    /// Space the player or recording bar covers at the bottom (bar, its 18 pt inset and a margin).
+    /// Views under the bar pad their scroll content by this much.
+    static let bottomBarClearance: CGFloat = 88
+
     private var isLive: Bool { model.liveRecordingID == transcript.id }
     private var allowsInsights: Bool { model.copilotSettings.showsInsights(isLive: isLive) }
 

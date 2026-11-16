@@ -25,6 +25,21 @@ import Testing
         #expect(TopicGraphInteraction.hitTest(at: CGPoint(x: CGFloat.infinity, y: 60), regions: regions) == nil)
     }
 
+    @Test func revisitCardsHitTheTopicTheyGoBackTo() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        let first = try #require(try graph.apply(.init(route: .new, points: [.init(track: 0, start: 0, end: 1, text: "A")])))
+        try graph.apply(.init(route: .new, points: [.init(track: 0, start: 2, end: 3, text: "B")]))
+        try graph.apply(.init(route: .returnTo(first), points: [.init(track: 0, start: 4, end: 5, text: "A again")]))
+        let layout = TopicGraphLayout(graph: graph)
+        let revisit = try #require(layout.cards.last)
+
+        let hit = TopicGraphInteraction.hitTest(at: CGPoint(x: revisit.frame.midX, y: revisit.frame.midY),
+                                                regions: TopicGraphInteraction.regions(in: layout))
+
+        #expect(revisit.revisit == .return)
+        #expect(hit == .topic(first))
+    }
+
     @Test(arguments: [false, true])
     func hoverTouchesOnlyDirectNeighboursAndIncidentEdges(merges: Bool) throws {
         var graph = TopicGraph(meetingId: UUID())

@@ -14,7 +14,11 @@ public struct TopicGraphStore: Sendable {
     }
 
     /// A failed load returns an empty graph and an error for the caller to display.
+    /// A meeting recorded without the graph has no file: that is an empty graph, not an error.
     public func load(meetingId: UUID) -> TopicGraphLoadResult {
+        guard FileManager.default.fileExists(atPath: fileURL(for: meetingId).path) else {
+            return .init(graph: TopicGraph(meetingId: meetingId), error: nil)
+        }
         do {
             let data = try Data(contentsOf: fileURL(for: meetingId))
             let graph = try JSONDecoder().decode(TopicGraph.self, from: data)
