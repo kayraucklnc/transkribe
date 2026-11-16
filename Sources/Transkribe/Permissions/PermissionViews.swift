@@ -102,7 +102,8 @@ private struct PermissionRow: View {
 }
 
 /// Shown over the app at launch when the microphone or call audio is missing (turned off since
-/// setup, or never given). It goes away by itself once both are allowed.
+/// setup, or never given). It stays, even across a reopen, until the person presses Continue, so
+/// allowing the required ones doesn't skip past the optional ones.
 struct PermissionsGate: View {
     @Environment(PermissionCenter.self) private var center
 
@@ -120,6 +121,20 @@ struct PermissionsGate: View {
                             .foregroundStyle(.secondary)
                     }
                     PermissionList()
+                    HStack(spacing: 16) {
+                        if !center.requiredGranted {
+                            Text("Allow your microphone and the sound from calls to continue.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .transition(.opacity)
+                        }
+                        Spacer()
+                        PrimaryButton(title: "Continue") {
+                            withAnimation(.easeInOut(duration: 0.4)) { center.finishReview() }
+                        }
+                        .disabled(!center.requiredGranted)
+                    }
+                    .animation(.easeInOut(duration: 0.25), value: center.requiredGranted)
                 }
                 .frame(maxWidth: 620)
                 .padding(40)

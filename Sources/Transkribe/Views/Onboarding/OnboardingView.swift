@@ -51,7 +51,32 @@ struct OnboardingView: View {
             if draft.vocabulary.isEmpty, let first = NSFullUserName().split(separator: " ").first {
                 draft.vocabulary = [String(first)]
             }
+            resume()
         }
+    }
+
+    /// Reopened partway through (macOS asks for that after Screen Recording): go back to the
+    /// same page. The answers before it were saved in `model.settings` on the way there.
+    private func resume() {
+        guard let raw = SetupProgress.load().onboardingStep, let saved = Step(rawValue: raw),
+              saved.rawValue >= Self.firstResumableStep.rawValue else { return }
+        step = saved
+        if saved == .ready { model.preloadModel() }
+    }
+
+    /// From here on, a reopen comes back to the same page; earlier ones are quick to redo.
+    private static let firstResumableStep = Step.permissions
+
+    private func remember(_ next: Step) {
+        guard next.rawValue >= Self.firstResumableStep.rawValue else {
+            SetupProgress.update { $0.onboardingStep = nil }
+            return
+        }
+        // Keep the answers so far; setup stays unfinished until the last page.
+        var settings = draft
+        settings.completedOnboarding = false
+        if settings != model.settings { model.settings = settings }
+        SetupProgress.update { $0.onboardingStep = next.rawValue }
     }
 
     // MARK: - Steps
@@ -159,6 +184,9 @@ struct OnboardingView: View {
             model.preloadModel()
             go(to: .ready)
         case .ready:
+            // Setup covered the permissions; the page reopens on its own if a required one is missing.
+            SetupProgress.update { $0.onboardingStep = nil }
+            permissions.finishReview()
             var settings = draft
             settings.completedOnboarding = true
             withAnimation(.easeInOut(duration: 0.5)) { model.settings = settings }
@@ -170,6 +198,7 @@ struct OnboardingView: View {
 
     private func go(to next: Step) {
         forward = next.rawValue > step.rawValue
+        remember(next)
         withAnimation(.spring(response: 0.5, dampingFraction: 0.86)) { step = next }
     }
 }

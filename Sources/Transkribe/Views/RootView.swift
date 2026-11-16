@@ -7,8 +7,14 @@ struct RootView: View {
     @Environment(PermissionCenter.self) private var permissions
     @State private var isDropTargeted = false
 
-    /// Setup is done but the microphone or call audio is missing: the app waits until it's allowed.
+    /// Setup is done but the microphone or call audio is missing, or the permissions page is still
+    /// open from before a reopen: the app waits until the person presses Continue.
     private var needsPermissions: Bool {
+        permissions.showsGate(completedOnboarding: model.settings.completedOnboarding)
+    }
+
+    /// Recording can't work: open the permissions page and keep it open until the person moves on.
+    private var missingRequired: Bool {
         model.settings.completedOnboarding && !permissions.requiredGranted
     }
 
@@ -50,6 +56,9 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.4), value: needsPermissions)
+        .onChange(of: missingRequired, initial: true) { _, missing in
+            if missing { permissions.beginReview() }
+        }
         // Nothing to search or click in the toolbar until setup is done.
         .toolbar(model.settings.completedOnboarding && !needsPermissions ? .visible : .hidden, for: .windowToolbar)
         .overlay(alignment: .top) {

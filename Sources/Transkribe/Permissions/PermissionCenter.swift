@@ -52,6 +52,25 @@ final class PermissionCenter {
         items.filter(\.isRequired).allSatisfy { $0.state == .granted || $0.state == .needsReopen }
     }
 
+    /// The permissions page opened after setup and the person hasn't moved on yet. Saved, so
+    /// reopening Transkribe (which macOS asks for after Screen Recording) comes back to it.
+    private(set) var isReviewing = SetupProgress.load().reviewingPermissions
+
+    /// Whether the permissions page covers the app once setup is done.
+    func showsGate(completedOnboarding: Bool) -> Bool {
+        SetupProgress(onboardingStep: nil, reviewingPermissions: isReviewing)
+            .showsPermissions(completedOnboarding: completedOnboarding, requiredGranted: requiredGranted)
+    }
+
+    func beginReview() { setReviewing(true) }
+    func finishReview() { setReviewing(false) }
+
+    private func setReviewing(_ reviewing: Bool) {
+        guard reviewing != isReviewing else { return }
+        isReviewing = reviewing
+        SetupProgress.update { $0.reviewingPermissions = reviewing }
+    }
+
     private static let askedKey = "askedPermissions"
     private var asked: Set<String> {
         get { Set(UserDefaults.standard.stringArray(forKey: Self.askedKey) ?? []) }
