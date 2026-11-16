@@ -104,4 +104,14 @@ import Testing
     @Test func callsWithoutACalendarMeetingStopWhenTheCallEnds() {
         #expect(CallEndPolicy.decide(now: end, scheduledEnd: nil, leftMeeting: false) == .stop)
     }
+
+    @Test func whileWaitingForThePlannedEndClosingTheTabStops() {
+        #expect(CallEndPolicy.stopsWhileWaiting(now: end - 1200, until: end, meetingOpen: false))
+    }
+
+    @Test func whileWaitingAnOpenOrUnreadableTabKeepsRecordingUntilThePlannedEnd() {
+        #expect(!CallEndPolicy.stopsWhileWaiting(now: end - 1200, until: end, meetingOpen: true))
+        #expect(!CallEndPolicy.stopsWhileWaiting(now: end - 1200, until: end, meetingOpen: nil))
+        #expect(CallEndPolicy.stopsWhileWaiting(now: end, until: end, meetingOpen: true))
+    }
 }

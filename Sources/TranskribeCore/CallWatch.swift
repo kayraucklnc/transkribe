@@ -50,6 +50,9 @@ public struct CallWatch: Sendable {
     /// The process holding the mic for the call, to know which browser to look in.
     public private(set) var activeBundleID: String?
     private var silentSince: Date?
+    /// The call's meeting tab was seen open, so its disappearing means you left.
+    private var sawMeetingOpen = false
+    private var meetingGoneSince: Date?
 
     public init() {}
 
@@ -59,22 +62,10 @@ public struct CallWatch: Sendable {
     /// or not a browser call).
     public mutating func update(micApps bundleIDs: [String], meetingOpen: Bool? = nil, at now: Date = Date()) -> Event? {
         let match = bundleIDs.lazy.compactMap { id in CallApps.name(for: id).map { (id, $0) } }.first
-        let app = match?.1
         if let active = activeApp {
-            if app != nil {
-                silentSince = nil
-                return nil
-            }
-            let since = silentSince ?? now
-            silentSince = since
-            let grace = meetingOpen == true ? Self.endAfterWithMeetingOpen : Self.endAfter
-            guard now.timeIntervalSince(since) >= grace else { return nil }
-            activeApp = nil
-            activeBundleID = nil
-            silentSince = nil
-            candidateSince = nil
-            return .ended(app: active)
+            return updateCall(active, micApps: bundleIDs, meetingOpen: meetingOpen, at: now)
         }
+        let app = match?.1
         guard let app else {
             candidateSince = nil
             return nil
@@ -85,5 +76,35 @@ public struct CallWatch: Sendable {
         activeApp = app
         activeBundleID = match?.0
         return .started(app: app)
+    }
+
+    /// Only the app that started the call counts: another call app on the mic (Slack, a second
+    /// browser) doesn't keep it going. A browser call also ends once its meeting tab is gone,
+    /// even if the browser keeps the mic for something else.
+    private mutating func updateCall(_ active: String, micApps bundleIDs: [String], meetingOpen: Bool?, at now: Date) -> Event? {
+        if meetingOpen == true { sawMeetingOpen = true }
+        meetingGoneSince = sawMeetingOpen && meetingOpen == false ? (meetingGoneSince ?? now) : nil
+        if let gone = meetingGoneSince, now.timeIntervalSince(gone) >= Self.endAfter {
+            return endCall(active)
+        }
+        if bundleIDs.contains(where: { CallApps.name(for: $0) == active }) {
+            silentSince = nil
+            return nil
+        }
+        let since = silentSince ?? now
+        silentSince = since
+        let grace = meetingOpen == true ? Self.endAfterWithMeetingOpen : Self.endAfter
+        guard now.timeIntervalSince(since) >= grace else { return nil }
+        return endCall(active)
+    }
+
+    private mutating func endCall(_ active: String) -> Event {
+        activeApp = nil
+        activeBundleID = nil
+        silentSince = nil
+        candidateSince = nil
+        sawMeetingOpen = false
+        meetingGoneSince = nil
+        return .ended(app: active)
     }
 }
