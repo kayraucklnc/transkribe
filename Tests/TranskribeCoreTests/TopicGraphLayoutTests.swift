@@ -158,6 +158,8 @@ import Testing
 
         #expect(layout.cards.enumerated().allSatisfy { $0.element.line == $0.offset })
         #expect(layout.cards.allSatisfy { $0.frame.minX == padding })
+        // Wider than the pane: the canvas scrolls sideways instead of clipping cards.
+        #expect(layout.size.width > 100)
     }
 
     @Test func shortGraphsKeepEveryCardFullSize() throws {

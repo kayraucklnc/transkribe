@@ -85,7 +85,7 @@ public struct TopicGraphLayout: Equatable, Sendable {
 
     /// - Parameter width: The width to wrap at. Without one, the path stays on one line.
     public init(graph: TopicGraph, width: CGFloat = .infinity) {
-        let topics = Dictionary(uniqueKeysWithValues: graph.topics.map { ($0.id, $0) })
+        let topics = Dictionary(graph.topics.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let collapsed = Self.collapsedTopicIds(in: graph)
         var rows: [String: Int] = [:]
         for topic in graph.topics {
@@ -131,7 +131,7 @@ public struct TopicGraphLayout: Equatable, Sendable {
                         frame: CGRect(origin: CGPoint(x: item.x, y: y), size: item.size), row: item.row,
                         line: item.line, isCompact: item.isCompact)
         }
-        let byId = Dictionary(uniqueKeysWithValues: cards.map { ($0.id, $0) })
+        let byId = Dictionary(cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         edges = placed.compactMap { item in
             guard let edge = item.step.edge, let from = item.step.previousCardId,
                   let source = byId[from], let target = byId[item.step.cardId] else { return nil }
@@ -171,12 +171,15 @@ public struct TopicGraphLayout: Equatable, Sendable {
         guard let first = graph.topics.first else { return [] }
         var steps = [Step(cardId: first.id, topicId: first.id, revisit: nil, edge: nil, previousCardId: nil)]
         var placed: Set<String> = [first.id]
-        for edge in graph.edges {
+        let known = Set(graph.topics.map(\.id))
+        for edge in graph.edges where known.contains(edge.to) {
             let previous = steps.last?.cardId
-            if edge.type == .return || edge.type == .merge {
+            // Any move to a topic that already has a card is drawn as a revisit, never as a link back.
+            if edge.type == .return || edge.type == .merge || placed.contains(edge.to) {
                 steps.append(Step(cardId: "revisit-\(edge.id)", topicId: edge.to, revisit: edge.type, edge: edge,
                                   previousCardId: previous))
-            } else if placed.insert(edge.to).inserted {
+            } else {
+                placed.insert(edge.to)
                 steps.append(Step(cardId: edge.to, topicId: edge.to, revisit: nil, edge: edge, previousCardId: previous))
             }
         }

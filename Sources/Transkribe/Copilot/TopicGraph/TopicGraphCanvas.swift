@@ -9,20 +9,29 @@ struct TopicGraphCanvas: View {
     let focusRequest: Int
     let onSelect: (String) -> Void
     @State private var hoveredTopicId: String?
+    /// While live, new topics scroll into view unless the user scrolled up to read.
+    @State private var followsCurrent = true
 
     var body: some View {
-        ScrollViewReader { proxy in
-            // The layout wraps to the pane width, so only the height scrolls.
-            ScrollView(.vertical) {
-                graph
-                    .frame(width: scene.layout.size.width, height: scene.layout.size.height, alignment: .topLeading)
-                    // Room to scroll the last line above the player or recording bar.
-                    .padding(.bottom, ConversationView.bottomBarClearance)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+        GeometryReader { geometry in
+            ScrollViewReader { proxy in
+                // The layout wraps to the pane width; it only scrolls sideways in a pane narrower than a card.
+                ScrollView([.vertical, .horizontal]) {
+                    graph
+                        .frame(width: scene.layout.size.width, height: scene.layout.size.height, alignment: .topLeading)
+                        // Room to scroll the last line above the player or recording bar.
+                        .padding(.bottom, ConversationView.bottomBarClearance)
+                        .frame(minWidth: geometry.size.width, alignment: .topLeading)
+                }
+                .modifier(TracksScrollEnd(isAtEnd: $followsCurrent))
+                .onAppear { if isLive { showCurrent(proxy, animated: false) } }
+                .onChange(of: scene.layout.currentCardId) { _, _ in if isLive, followsCurrent { showCurrent(proxy) } }
+                .onChange(of: scene.layout.size) { _, _ in if isLive, followsCurrent { showCurrent(proxy) } }
+                .onChange(of: focusRequest) { _, _ in
+                    followsCurrent = true
+                    showCurrent(proxy)
+                }
             }
-            .onAppear { if isLive { showCurrent(proxy, animated: false) } }
-            .onChange(of: scene.layout.currentCardId) { _, _ in if isLive { showCurrent(proxy) } }
-            .onChange(of: focusRequest) { _, _ in showCurrent(proxy) }
         }
     }
 
@@ -110,5 +119,23 @@ struct TopicGraphCanvas: View {
         path.addLine(to: CGPoint(x: tip.x - size * cos(angle + .pi / 7), y: tip.y - size * sin(angle + .pi / 7)))
         path.closeSubpath()
         return path
+    }
+}
+
+/// Reports whether the scroll view shows its last line. macOS 14 cannot observe scrolling, so there
+/// the graph always follows the current topic.
+private struct TracksScrollEnd: ViewModifier {
+    @Binding var isAtEnd: Bool
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content.onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 160
+            } action: { _, atEnd in
+                isAtEnd = atEnd
+            }
+        } else {
+            content
+        }
     }
 }

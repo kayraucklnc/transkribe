@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import TranskribeCore
 
@@ -74,7 +75,12 @@ struct TopicGraphView: View {
                 return
             }
             guard width > 0 else { return }
-            let width = width
+            // Resizing changes the width every point: wait for it to settle before laying out again.
+            if scene != nil {
+                try? await Task.sleep(for: .milliseconds(60))
+                guard !Task.isCancelled else { return }
+            }
+            let width = width - Self.scrollerWidth
             let updated = await Task.detached(priority: .userInitiated) {
                 TopicGraphScene(graph: structure, width: width)
             }.value
@@ -138,6 +144,12 @@ struct TopicGraphView: View {
         .padding(.vertical, 12)
     }
 
+    /// Always-visible scroll bars take space from the canvas; overlay scroll bars do not.
+    private static var scrollerWidth: CGFloat {
+        NSScroller.preferredScrollerStyle == .legacy
+            ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
+    }
+
     private var emptyMessage: String {
         if controller?.notice != nil || loadError != nil { return "The graph notice gives more information." }
         if controller != nil { return "Topics appear as speech arrives." }
@@ -189,7 +201,7 @@ struct TopicGraphScene: Sendable {
         self.graph = graph
         layout = TopicGraphLayout(graph: graph, width: width)
         hitRegions = TopicGraphInteraction.regions(in: layout)
-        topics = Dictionary(uniqueKeysWithValues: graph.topics.map { ($0.id, $0) })
+        topics = Dictionary(graph.topics.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         points = Dictionary(grouping: graph.points.sorted {
             let left = graph.meetingTime(for: $0), right = graph.meetingTime(for: $1)
             return left == right ? $0.track < $1.track : left < right
