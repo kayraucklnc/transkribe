@@ -6,9 +6,12 @@ import Foundation
 /// - Main topics run left to right in the order they came up, joined by one spine.
 /// - Each main topic carries its side topics beneath it as a small tree, like an org chart.
 /// - Main topics and their trees wrap onto the next line like text, so the map fits the width.
+/// - Given a focus, topics the conversation has moved on from become history: their side topics
+///   are hidden and the main topic shrinks to a quiet compact card, until it is discussed again.
 public struct TopicMapLayout: Equatable, Sendable {
     public static let mainSize = CGSize(width: 208, height: 64)
     public static let sideSize = CGSize(width: 184, height: 56)
+    public static let dormantSize = CGSize(width: 168, height: 40)
     public static let siblingGap: CGFloat = 20
     public static let levelGap: CGFloat = 40
     public static let blockGap: CGFloat = 56
@@ -22,6 +25,8 @@ public struct TopicMapLayout: Equatable, Sendable {
         public let frame: CGRect
         public let depth: Int
         public let line: Int
+        /// A main topic the conversation has moved on from, drawn compact.
+        public let isDormant: Bool
     }
 
     public enum LinkKind: Equatable, Sendable {
@@ -62,27 +67,33 @@ public struct TopicMapLayout: Equatable, Sendable {
     public let links: [Link]
     public let size: CGSize
 
-    /// - Parameter width: The width to wrap at. Without one, all main topics stay on one line.
-    public init(graph: TopicGraph, width: CGFloat = .infinity) {
-        let outline = TopicTimeline.outline(graph.topics)
+    /// - Parameters:
+    ///   - width: The width to wrap at. Without one, all main topics stay on one line.
+    ///   - focus: Topics in focus (see `TopicTimeline.focusedTopicIds`). Without one, everything is shown in full.
+    public init(graph: TopicGraph, width: CGFloat = .infinity, focus: Set<String>? = nil) {
+        let isDormant = { (id: String) in focus.map { !$0.contains(id) } ?? false }
+        let outline = TopicTimeline.outline(graph.topics).filter { $0.depth == 0 || !isDormant($0.topic.id) }
+        func nodeSize(_ id: String, depth: Int) -> CGSize { isDormant(id) ? Self.dormantSize : Self.size(depth: depth) }
         let children = Dictionary(grouping: outline.filter { $0.depth > 0 }) { $0.topic.parentId ?? "" }
         let mains = outline.filter { $0.depth == 0 }.map(\.topic)
         var widths: [String: CGFloat] = [:]
         var heights: [String: CGFloat] = [:]
         // Children come after their parent in the outline, so walk it backwards to size subtrees.
         for item in outline.reversed() {
-            let size = Self.size(depth: item.depth)
+            let size = nodeSize(item.topic.id, depth: item.depth)
             let kids = (children[item.topic.id] ?? []).map(\.topic.id)
             let kidsWidth = kids.map { widths[$0] ?? 0 }.reduce(0, +) + CGFloat(max(kids.count - 1, 0)) * Self.siblingGap
             widths[item.topic.id] = max(size.width, kidsWidth)
-            heights[item.topic.id] = size.height + (kids.isEmpty ? 0 : Self.levelGap + (kids.compactMap { heights[$0] }.max() ?? 0))
+            // Every main topic takes a full row, so compact ones line up with the rest.
+            let height = item.depth == 0 ? max(size.height, Self.mainSize.height) : size.height
+            heights[item.topic.id] = height + (kids.isEmpty ? 0 : Self.levelGap + (kids.compactMap { heights[$0] }.max() ?? 0))
         }
 
         // Flow the main topics' trees into lines.
         var placements: [(id: String, x: CGFloat, line: Int)] = []
         var x = Self.padding, line = 0
         for main in mains {
-            let blockWidth = widths[main.id] ?? Self.mainSize.width
+            let blockWidth = widths[main.id] ?? nodeSize(main.id, depth: 0).width
             if x > Self.padding, x + blockWidth + Self.padding > width {
                 line += 1
                 x = Self.padding
@@ -100,10 +111,13 @@ public struct TopicMapLayout: Equatable, Sendable {
         var nodes: [Node] = []
         var links: [Link] = []
         func place(_ id: String, depth: Int, left: CGFloat, top: CGFloat, line: Int) {
-            let size = Self.size(depth: depth)
-            let span = widths[id] ?? size.width
-            let frame = CGRect(x: left + (span - size.width) / 2, y: top, width: size.width, height: size.height)
-            nodes.append(Node(id: id, frame: frame, depth: depth, line: line))
+            let cardSize = nodeSize(id, depth: depth)
+            let span = widths[id] ?? cardSize.width
+            // Main topics on a line share a centre line, so the spine between them stays straight.
+            let lift = depth == 0 ? (Self.mainSize.height - cardSize.height) / 2 : 0
+            let frame = CGRect(x: left + (span - cardSize.width) / 2, y: top + lift,
+                               width: cardSize.width, height: cardSize.height)
+            nodes.append(Node(id: id, frame: frame, depth: depth, line: line, isDormant: isDormant(id)))
             let kids = (children[id] ?? []).map(\.topic.id)
             let kidsWidth = kids.map { widths[$0] ?? 0 }.reduce(0, +) + CGFloat(max(kids.count - 1, 0)) * Self.siblingGap
             var childLeft = left + (span - kidsWidth) / 2

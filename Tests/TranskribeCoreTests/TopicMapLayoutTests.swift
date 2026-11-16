@@ -103,6 +103,35 @@ import Testing
         }
     }
 
+    @Test func historyShrinksToCompactMainTopicsWithTheirSideTopicsHidden() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        let old = try add(.new, at: 0, to: &graph)
+        let oldSide = try add(.side(old), at: 10, to: &graph)
+        try add(.merge(old), at: 20, to: &graph)
+        let now = try add(.new, at: 30, to: &graph)
+        let nowSide = try add(.side(now), at: 40, to: &graph)
+
+        let layout = TopicMapLayout(graph: graph, width: 900, focus: [now, nowSide])
+        let nodes = Dictionary(uniqueKeysWithValues: layout.nodes.map { ($0.id, $0) })
+
+        #expect(nodes[oldSide] == nil)
+        #expect(nodes[old]?.isDormant == true)
+        #expect(nodes[old]?.frame.size == TopicMapLayout.dormantSize)
+        #expect(nodes[now]?.isDormant == false && nodes[nowSide] != nil)
+        // Compact and full main topics share a centre line, so the spine stays straight.
+        #expect(nodes[old]?.frame.midY == nodes[now]?.frame.midY)
+        #expect(layout.links.allSatisfy { nodes[$0.from] != nil && nodes[$0.to] != nil })
+        #expect(layout.links.contains { $0.kind == .spine && $0.from == old && $0.to == now })
+    }
+
+    @Test func withoutAFocusEveryTopicIsShownInFull() throws {
+        let graph = try longMeeting()
+        let layout = TopicMapLayout(graph: graph, width: 900)
+
+        #expect(layout.nodes.count == graph.topics.count)
+        #expect(layout.nodes.allSatisfy { !$0.isDormant })
+    }
+
     @Test func pendingTextDoesNotChangeTheMap() throws {
         var graph = try longMeeting()
         let layout = TopicMapLayout(graph: graph, width: 900)

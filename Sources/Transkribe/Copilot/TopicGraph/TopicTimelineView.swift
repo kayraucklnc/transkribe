@@ -19,28 +19,53 @@ struct TopicTimelineView: View {
     let focusRequest: Int
     let onSelect: (String) -> Void
     @State private var hoveredTopicId: String?
+    /// Shows the topics the conversation has moved on from.
+    @State private var showsEarlier = false
 
     private var timeline: TopicTimeline { scene.timeline }
+
+    /// Rows on screen: the topics in focus, or every topic while the earlier ones are shown. `index` is the
+    /// row's position in the full timeline; `position` is where it is drawn.
+    struct Shown {
+        let rows: [(index: Int, row: TopicTimeline.Row)]
+        let positions: [Int: Int]
+        let earlierCount: Int
+    }
+
+    private func shown(in window: ClosedRange<TimeInterval>) -> Shown {
+        let focused = timeline.focusedTopicIds(in: window)
+        let all = Array(timeline.rows.enumerated()).map { (index: $0.offset, row: $0.element) }
+        let rows = showsEarlier ? all : all.filter { focused.contains($0.row.id) }
+        return Shown(rows: rows,
+                     positions: Dictionary(uniqueKeysWithValues: rows.enumerated().map { ($0.element.index, $0.offset) }),
+                     earlierCount: timeline.rows.count - focused.count)
+    }
 
     var body: some View {
         GeometryReader { geometry in
             let labelWidth = min(240, max(150, geometry.size.width * 0.3))
             let trackWidth = max(80, geometry.size.width - Self.leadingInset - Self.trailingInset - labelWidth - 12)
             let metrics = Metrics(labelWidth: labelWidth, trackWidth: trackWidth, window: timeline.window(span: span))
+            let shown = shown(in: metrics.window)
             VStack(spacing: 0) {
                 ruler(metrics)
                 Divider().opacity(0.5)
                 ScrollViewReader { proxy in
                     ScrollView(.vertical) {
                         VStack(spacing: 0) {
-                            ForEach(Array(timeline.rows.enumerated()), id: \.element.id) { index, row in
-                                rowView(row, index: index, metrics: metrics)
+                            if shown.earlierCount > 0 {
+                                earlierToggle(count: shown.earlierCount)
                             }
+                            VStack(spacing: 0) {
+                                ForEach(shown.rows, id: \.row.id) { item in
+                                    rowView(item.row, index: item.index, metrics: metrics)
+                                }
+                            }
+                            .background(alignment: .topLeading) { paths(metrics, shown: shown) }
+                            .padding(.top, 6)
+                            // Room to scroll the last row above the player or recording bar.
+                            .padding(.bottom, ConversationView.bottomBarClearance)
                         }
-                        .background(alignment: .topLeading) { paths(metrics) }
-                        .padding(.top, 6)
-                        // Room to scroll the last row above the player or recording bar.
-                        .padding(.bottom, ConversationView.bottomBarClearance)
                     }
                     .onAppear { showCurrent(proxy, anchor: .center, animated: false) }
                     .onChange(of: timeline.currentTopicId) { _, _ in if isLive { showCurrent(proxy, anchor: nil) } }
@@ -144,11 +169,35 @@ struct TopicTimelineView: View {
         return isHovered ? Color.primary.opacity(0.04) : .clear
     }
 
+    /// Folds away topics the conversation has moved on from; they come back as soon as they are discussed again.
+    private func earlierToggle(count: Int) -> some View {
+        Button {
+            withAnimation(Theme.spring) { showsEarlier.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .rotationEffect(.degrees(showsEarlier ? 90 : 0))
+                Text(showsEarlier ? "Hide earlier topics"
+                                  : count == 1 ? "1 earlier topic" : "\(count) earlier topics")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .padding(.leading, Self.leadingInset)
+            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 6)
+        .help(showsEarlier ? "Hide topics the conversation has moved on from"
+                           : "Show topics the conversation has moved on from")
+    }
+
     // MARK: Path
 
     /// The conversation's path: a step from row to row at each switch, plus faint time guides.
-    private func paths(_ metrics: Metrics) -> some View {
-        let rowCount = timeline.rows.count
+    private func paths(_ metrics: Metrics, shown: Shown) -> some View {
+        let rowCount = shown.rows.count
         return Canvas { context, _ in
             let height = CGFloat(rowCount) * Self.rowHeight
             context.clip(to: Path(CGRect(x: metrics.trackOrigin, y: 0, width: metrics.trackWidth + 6, height: height)))
@@ -159,9 +208,10 @@ struct TopicTimelineView: View {
             }
             let visits = timeline.visits
             for (index, (from, to)) in zip(visits, visits.dropFirst()).enumerated() where from.row != to.row {
+                guard let fromRow = shown.positions[from.row], let toRow = shown.positions[to.row] else { continue }
                 guard to.start >= metrics.window.lowerBound else { continue }
                 let x = metrics.trackOrigin + timeline.x(for: to.start, in: metrics.window, width: metrics.trackWidth)
-                let path = Self.step(at: x, from: Self.centre(of: from.row), to: Self.centre(of: to.row))
+                let path = Self.step(at: x, from: Self.centre(of: fromRow), to: Self.centre(of: toRow))
                 let isLatest = index == visits.count - 2
                 context.stroke(path, with: .color(isLatest ? Color.accentColor.opacity(0.8) : .primary.opacity(0.3)),
                                style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))

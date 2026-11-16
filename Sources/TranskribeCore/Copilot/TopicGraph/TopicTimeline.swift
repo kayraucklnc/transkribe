@@ -17,6 +17,8 @@ public struct TopicTimeline: Equatable, Sendable {
         public let id: String
         /// 0 for main topics, 1 for a side topic, 2 for a side topic of a side topic.
         public let depth: Int
+        /// The topic this side topic branched from.
+        public let parentId: String?
         /// Time spent on the topic across all its visits.
         public let totalSec: TimeInterval
         public let visitCount: Int
@@ -69,7 +71,7 @@ public struct TopicTimeline: Equatable, Sendable {
         let byTopic = Dictionary(grouping: visits, by: \.topicId)
         rows = order.map { item in
             let topicVisits = byTopic[item.topic.id] ?? []
-            return Row(id: item.topic.id, depth: item.depth,
+            return Row(id: item.topic.id, depth: item.depth, parentId: item.topic.parentId,
                        totalSec: topicVisits.reduce(0) { $0 + $1.end - $1.start }, visitCount: topicVisits.count,
                        isResolved: item.topic.parentId != nil && item.topic.status == .resolved)
         }
@@ -99,6 +101,23 @@ public struct TopicTimeline: Equatable, Sendable {
     public func window(span: TimeInterval?) -> ClosedRange<TimeInterval> {
         guard let span, span > 0, end > span else { return 0...max(end, Self.minimumScale) }
         return (end - span)...end
+    }
+
+    /// Topics the conversation is about now: those discussed inside `window`, the current topic, and the
+    /// topics they branched from. Everything else is history. A topic comes back as soon as it is discussed again.
+    public func focusedTopicIds(in window: ClosedRange<TimeInterval>) -> Set<String> {
+        guard window.lowerBound > 0 else { return Set(rows.map(\.id)) }
+        let focused = Set(visits.filter { $0.end > window.lowerBound }.map(\.topicId) + [currentTopicId].compactMap { $0 })
+        let parents = Dictionary(rows.map { ($0.id, $0.parentId) }, uniquingKeysWith: { first, _ in first })
+        var withParents = focused
+        for id in focused {
+            // Stops at a parent that is already in, since its own parents are then in too.
+            var parent = parents[id] ?? nil
+            while let next = parent, withParents.insert(next).inserted {
+                parent = parents[next] ?? nil
+            }
+        }
+        return withParents
     }
 
     /// Horizontal position of a meeting time on a track `width` wide showing `window`.

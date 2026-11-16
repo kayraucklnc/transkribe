@@ -151,6 +151,39 @@ import Testing
         }
     }
 
+    @Test func topicsTheConversationMovedOnFromLeaveTheFocus() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        let old = try add(.new, at: 0, to: &graph)
+        let oldSide = try add(.side(old), at: 60, to: &graph)
+        let middle = try add(.new, at: 600, to: &graph)
+        let recent = try add(.new, at: 1_000, to: &graph)
+        let recentSide = try add(.side(recent), at: 1_700, to: &graph)
+        let timeline = TopicTimeline(graph: graph)
+
+        let focused = timeline.focusedTopicIds(in: timeline.window(span: 600))
+
+        #expect(focused == [recent, recentSide])
+        #expect(!focused.contains(old) && !focused.contains(oldSide) && !focused.contains(middle))
+        // The whole meeting keeps every topic in focus.
+        #expect(timeline.focusedTopicIds(in: timeline.window(span: nil)).count == 5)
+    }
+
+    @Test func goingBackToATopicBringsItAndItsParentBackIntoFocus() throws {
+        var graph = TopicGraph(meetingId: UUID())
+        let old = try add(.new, at: 0, to: &graph)
+        let oldSide = try add(.side(old), at: 60, to: &graph)
+        try add(.new, at: 900, to: &graph)
+        try add(.new, at: 1_200, to: &graph)
+        try add(.returnTo(oldSide), at: 1_700, to: &graph)
+        let timeline = TopicTimeline(graph: graph)
+
+        let focused = timeline.focusedTopicIds(in: timeline.window(span: 600))
+
+        #expect(focused.contains(oldSide))
+        #expect(focused.contains(old))
+        #expect(timeline.rows.first { $0.id == oldSide }?.parentId == old)
+    }
+
     @Test func threeHundredTopicsTakeLessThanFiftyMilliseconds() throws {
         var graph = TopicGraph(meetingId: UUID())
         for index in 0..<300 {

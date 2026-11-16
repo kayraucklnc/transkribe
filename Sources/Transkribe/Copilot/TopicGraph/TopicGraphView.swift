@@ -83,6 +83,7 @@ struct TopicGraphView: View {
                                   focusRequest: focusRequest) { selectedTopicId = $0 }
             case .map:
                 TopicMapView(scene: scene, isLive: isLive, selectedTopicId: selectedTopicId,
+                             span: span > 0 ? TimeInterval(span) : nil,
                              focusRequest: focusRequest) { selectedTopicId = $0 }
             }
         } else if isLoading {
@@ -170,7 +171,7 @@ enum TopicGraphStyle: String {
     case map
 }
 
-/// Switch between the timeline and the map, choose how much time the timeline shows, and jump to now.
+/// Switch between the timeline and the map, choose how much recent conversation stays in focus, and jump to now.
 struct TopicGraphControls: View {
     static let spans: [(seconds: Int, title: String, short: String)] = [
         (300, "Last 5 minutes", "5 min"), (900, "Last 15 minutes", "15 min"),
@@ -184,20 +185,18 @@ struct TopicGraphControls: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if style == .timeline {
-                Menu {
-                    Picker("Show", selection: $span) {
-                        ForEach(Self.spans, id: \.seconds) { Text($0.title).tag($0.seconds) }
-                    }
-                    .pickerStyle(.inline)
-                } label: {
-                    Label(Self.spans.first { $0.seconds == span }?.short ?? "All", systemImage: "clock")
-                        .labelStyle(.titleAndIcon)
+            Menu {
+                Picker("Show", selection: $span) {
+                    ForEach(Self.spans, id: \.seconds) { Text($0.title).tag($0.seconds) }
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .help("How much of the meeting the timeline shows. Short meetings always fit.")
+                .pickerStyle(.inline)
+            } label: {
+                Label(Self.spans.first { $0.seconds == span }?.short ?? "All", systemImage: "clock")
+                    .labelStyle(.titleAndIcon)
             }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("How much recent conversation stays in focus. Topics the conversation moved on from fold away.")
             Picker("View", selection: $style) {
                 Image(systemName: "chart.bar.xaxis")
                     .accessibilityLabel("Timeline")

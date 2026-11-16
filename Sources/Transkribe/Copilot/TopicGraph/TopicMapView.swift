@@ -7,13 +7,17 @@ struct TopicMapView: View {
     let scene: TopicGraphScene
     let isLive: Bool
     let selectedTopicId: String?
+    /// How much recent conversation stays in focus. Older topics fold into compact history; `nil` shows everything.
+    let span: TimeInterval?
     /// Changes when the user asks to see the current topic.
     let focusRequest: Int
     let onSelect: (String) -> Void
 
     var body: some View {
+        let focus = span.map { scene.timeline.focusedTopicIds(in: scene.timeline.window(span: $0)) }
         GeometryReader { geometry in
-            TopicMapContent(scene: scene, layout: TopicMapLayout(graph: scene.graph, width: geometry.size.width),
+            TopicMapContent(scene: scene,
+                            layout: TopicMapLayout(graph: scene.graph, width: geometry.size.width, focus: focus),
                             isLive: isLive, selectedTopicId: selectedTopicId, focusRequest: focusRequest,
                             onSelect: onSelect)
         }
@@ -42,6 +46,7 @@ private struct TopicMapContent: View {
                         if let topic = scene.topics[node.id] {
                             Button { onSelect(node.id) } label: {
                                 TopicMapNode(topic: topic, row: scene.rowsById[node.id], isMain: node.depth == 0,
+                                             isDormant: node.isDormant,
                                              isCurrent: node.id == currentId, isLive: isLive,
                                              isSelected: node.id == selectedTopicId)
                             }
@@ -128,6 +133,8 @@ private struct TopicMapNode: View {
     let topic: TopicGraphTopic
     let row: TopicTimeline.Row?
     let isMain: Bool
+    /// A topic the conversation has moved on from: name only, quieter.
+    let isDormant: Bool
     let isCurrent: Bool
     let isLive: Bool
     let isSelected: Bool
@@ -141,6 +148,25 @@ private struct TopicMapNode: View {
     }
 
     var body: some View {
+        if isDormant { dormant } else { card }
+    }
+
+    private var dormant: some View {
+        Text(topic.label)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(shape.fill(Theme.card.opacity(0.6)))
+            .overlay(shape.strokeBorder(Color.primary.opacity(0.06), lineWidth: 1))
+            .contentShape(shape)
+            .help("\(topic.label)\nEarlier topic · \(detail)")
+            .accessibilityLabel(topic.label)
+            .accessibilityValue("earlier topic, \(detail)")
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(topic.label)
                 .font(.system(size: isMain ? 14 : 13, weight: isMain ? .semibold : .medium))
