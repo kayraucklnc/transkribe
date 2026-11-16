@@ -7,9 +7,9 @@ struct RootView: View {
     @Environment(PermissionCenter.self) private var permissions
     @State private var isDropTargeted = false
 
-    /// Setup is done but a permission is missing: the app waits until it's allowed.
+    /// Setup is done but the microphone or call audio is missing: the app waits until it's allowed.
     private var needsPermissions: Bool {
-        model.settings.completedOnboarding && !permissions.allGranted
+        model.settings.completedOnboarding && !permissions.requiredGranted
     }
 
     var body: some View {

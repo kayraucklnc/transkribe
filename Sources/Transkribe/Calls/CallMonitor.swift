@@ -8,6 +8,9 @@ import TranskribeCore
 final class CallMonitor {
     /// The app of a call that just started, while the island asks whether to record it.
     private(set) var prompt: String?
+    /// The call's mic went quiet before the meeting's planned end: recording continues until
+    /// this time unless you stop it (see `CallEndPolicy`). The island asks "Call over?".
+    private(set) var keepsRecordingUntil: Date?
     var offersToRecord: Bool {
         didSet { UserDefaults.standard.set(offersToRecord, forKey: Self.offerKey); restart() }
     }
@@ -37,8 +40,8 @@ final class CallMonitor {
     private var recordingForCall = false
     /// A meeting joined from its reminder: the next call that starts is recorded under its name.
     private var joinedMeeting: (meeting: CalendarMeeting, until: Date)?
-    /// The meeting the current recording is for, if it was started for one.
-    private var recordedMeetingID: CalendarMeeting.ID?
+    /// The calendar meeting the current recording is for: its end is when a quiet mic may stop it.
+    private var recordedMeeting: CalendarMeeting?
     /// How long after Join the call may take to pick up the mic (a lobby, a Zoom update).
     private static let joinWindow: TimeInterval = 15 * 60
     /// The calendar meeting whose link is open in the browser that started the call being offered.
@@ -69,8 +72,15 @@ final class CallMonitor {
     private func tick() {
         // While a browser call runs, an open meeting tab gives the mic longer to come back.
         let meetingOpen = watch.isInCall ? browserMeetings().map { !$0.isEmpty } : nil
+        if recordingForCall, !model.isRecording, model.recordingState == .idle {
+            finishCall() // stopped by hand
+        }
         switch watch.update(micApps: MicUsage.bundleIDs(), meetingOpen: meetingOpen) {
         case .started(let app)?:
+            if keepsRecordingUntil != nil {
+                keepsRecordingUntil = nil // the call came back; carry on
+                return
+            }
             guard !model.isRecording, model.settings.completedOnboarding else { return }
             let tab = browserMeetings()?.first
             let scheduled = tab.flatMap(CalendarTitles.meeting(matching:))
@@ -84,20 +94,49 @@ final class CallMonitor {
             }
         case .ended?:
             dismiss()
-            // The call's real end, which may be well past the calendar's end time.
-            if recordingForCall, stopsWithCall || recordedMeetingID != nil, model.isRecording {
-                model.stopRecording()
-                model.showToast("Call ended · recording saved")
+            guard recordingForCall, model.isRecording, stopsWithCall || recordedMeeting != nil else {
+                finishCall()
+                return
             }
-            recordingForCall = false
-            recordedMeetingID = nil
-            restart()
+            switch CallEndPolicy.decide(now: Date(), scheduledEnd: recordedMeeting?.end, leftMeeting: meetingOpen == false) {
+            case .stop: stopForCallEnd()
+            case .keepUntil(let end): keepsRecordingUntil = end
+            }
         case nil:
+            if let end = keepsRecordingUntil, Date() >= end {
+                stopForCallEnd()
+            }
             if let joined = joinedMeeting, Date() > joined.until {
                 joinedMeeting = nil
                 restart()
             }
         }
+    }
+
+    /// From the island: the call is over, stop now.
+    func stopNow() {
+        stopForCallEnd()
+    }
+
+    /// From the island: keep recording; you'll stop it yourself.
+    func keepRecording() {
+        finishCall()
+    }
+
+    private func stopForCallEnd() {
+        if model.isRecording {
+            model.stopRecording()
+            model.showToast("Call ended · recording saved")
+        }
+        finishCall()
+    }
+
+    /// Forgets the call; the recording (if any) now runs until you stop it.
+    private func finishCall() {
+        recordingForCall = false
+        recordedMeeting = nil
+        keepsRecordingUntil = nil
+        restart()
     }
 
     func recordCall() {
@@ -110,6 +149,8 @@ final class CallMonitor {
         model.recordingSource = .both
         model.startRecording(title: event?.title)
         recordingForCall = true
+        // A call during a calendar meeting keeps recording through quiet stretches until it's planned to end.
+        recordedMeeting = CalendarTitles.meetingWithLinkOnNow()
     }
 
     /// Records the next call that starts as `meeting`, without asking. If a call app already has
@@ -126,7 +167,7 @@ final class CallMonitor {
 
     /// Whether the recording running now is for `meeting`.
     func isRecording(_ meeting: CalendarMeeting) -> Bool {
-        recordedMeetingID == meeting.id
+        recordedMeeting?.id == meeting.id
     }
 
     private func record(_ meeting: CalendarMeeting) {
@@ -135,7 +176,7 @@ final class CallMonitor {
         model.recordingSource = .both
         model.startRecording(title: meeting.title)
         recordingForCall = true
-        recordedMeetingID = meeting.id
+        recordedMeeting = meeting
     }
 
     func dismiss() {

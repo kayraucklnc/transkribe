@@ -78,7 +78,7 @@ private struct CallSettingsTab: View {
                     Toggle(isOn: $calls.stopsWithCall) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Stop recording when the call ends")
-                            Text("Only for recordings started from that card.")
+                            Text("Only for recordings started from that card or a reminder. During a calendar meeting, a quiet mic (say, while you're muted) never stops it before the planned end.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

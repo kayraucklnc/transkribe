@@ -77,6 +77,20 @@ struct NotchHUDView: View {
             }, title: "Recording saved", subtitle: [title, Self.durationText(duration)].filter { !$0.isEmpty }.joined(separator: " · "))
         case .reminder(let reminder):
             ReminderCard(reminder: reminder, reminders: hud.reminders)
+        case .callSeemsOver(let until):
+            CardRow(icon: {
+                Image(systemName: "phone.down.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(Color.white.opacity(0.14), in: Circle())
+            }, title: "Call over?", subtitle: "Still recording until \(until.formatted(date: .omitted, time: .shortened))") {
+                HStack(spacing: 6) {
+                    IslandButton(title: "Stop", tint: Theme.record, action: hud.calls.stopNow)
+                    IslandButton(title: "Keep", tint: .white.opacity(0.16), action: hud.calls.keepRecording)
+                        .help("Keep recording until you stop it")
+                }
+            }
         case .callPrompt(let app):
             CardRow(icon: { RecordingBadge() }, title: "\(app) call", subtitle: "Record and transcribe it?") {
                 HStack(spacing: 6) {

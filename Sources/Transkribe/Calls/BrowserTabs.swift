@@ -18,7 +18,8 @@ enum BrowserTabs {
 
     static let automationSettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!
 
-    /// The meetings open in `browser`, or nil when Transkribe can't tell (not allowed, not open).
+    /// The meetings open in `browser`, or nil when Transkribe can't tell (not allowed, not open,
+    /// or only window titles to go on). An empty list means the browser has no meeting open.
     static func meetings(in browser: Browser) -> [BrowserMeeting]? {
         guard isRunning(browser) else { return nil }
         switch browser.reading {
@@ -27,7 +28,9 @@ enum BrowserTabs {
             return urls.compactMap(URL.init(string:)).compactMap(BrowserMeeting.from(url:))
         case .windowTitles:
             guard AXIsProcessTrusted() else { return nil }
-            return windowTitles(of: browser).compactMap(BrowserMeeting.from(windowTitle:))
+            let meetings = windowTitles(of: browser).compactMap(BrowserMeeting.from(windowTitle:))
+            // Titles only show each window's front tab, so finding none doesn't prove there isn't one.
+            return meetings.isEmpty ? nil : meetings
         }
     }
 

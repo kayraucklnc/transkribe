@@ -85,3 +85,23 @@ import Testing
         #expect(watch.update(micApps: [], meetingOpen: false, at: start + 26) == .ended(app: "Chrome"))
     }
 }
+
+@Suite struct CallEndPolicyTests {
+    private let end = Date(timeIntervalSince1970: 1_800_000_000)
+
+    @Test func aQuietMicBeforeThePlannedEndKeepsRecording() {
+        #expect(CallEndPolicy.decide(now: end - 1200, scheduledEnd: end, leftMeeting: false) == .keepUntil(end))
+    }
+
+    @Test func leavingTheMeetingStopsEvenBeforeThePlannedEnd() {
+        #expect(CallEndPolicy.decide(now: end - 1200, scheduledEnd: end, leftMeeting: true) == .stop)
+    }
+
+    @Test func afterThePlannedEndTheRealEndStopsIt() {
+        #expect(CallEndPolicy.decide(now: end + 900, scheduledEnd: end, leftMeeting: false) == .stop)
+    }
+
+    @Test func callsWithoutACalendarMeetingStopWhenTheCallEnds() {
+        #expect(CallEndPolicy.decide(now: end, scheduledEnd: nil, leftMeeting: false) == .stop)
+    }
+}

@@ -229,7 +229,7 @@ private struct PermissionsStep: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             Heading(title: "Let Transkribe listen",
-                    subtitle: "macOS asks once for each. Transkribe needs all of them to record, remind you about meetings and follow them to the end.")
+                    subtitle: "macOS asks once for each. The microphone and call audio are needed to record; the others turn on reminders, dictation and meeting tabs.")
             ScrollView {
                 PermissionList()
             }

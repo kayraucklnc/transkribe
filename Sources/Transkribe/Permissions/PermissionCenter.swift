@@ -5,8 +5,9 @@ import Observation
 import SwiftUI
 import TranskribeCore
 
-/// Every permission Transkribe needs, whether each is granted, and how to ask for it. Setup and
-/// the launch check both use it: the app doesn't open until all of them are allowed.
+/// Every permission Transkribe uses, whether each is granted, and how to ask for it. Setup and
+/// the launch check both use it: the app doesn't open without the microphone and call audio;
+/// the rest (calendar, Accessibility, browser tabs) are optional and only turn features on.
 @Observable @MainActor
 final class PermissionCenter {
     enum Kind: Hashable {
@@ -35,13 +36,21 @@ final class PermissionCenter {
         let tint: Color
         var state: State
         var id: Kind { kind }
+
+        /// Recording needs these; everything else adds features.
+        var isRequired: Bool {
+            kind == .microphone || kind == .systemAudio
+        }
     }
 
     private(set) var items: [Item] = []
 
-    var allGranted: Bool { items.allSatisfy { $0.state == .granted } }
+    /// The app can be used: every required permission is allowed.
+    var requiredGranted: Bool { items.filter(\.isRequired).allSatisfy { $0.state == .granted } }
     /// During setup, a permission that only needs a reopen is fine: it's finished after setup.
-    var readyForSetup: Bool { items.allSatisfy { $0.state == .granted || $0.state == .needsReopen } }
+    var readyForSetup: Bool {
+        items.filter(\.isRequired).allSatisfy { $0.state == .granted || $0.state == .needsReopen }
+    }
 
     private static let askedKey = "askedPermissions"
     private var asked: Set<String> {

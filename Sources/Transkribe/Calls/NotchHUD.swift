@@ -21,11 +21,13 @@ final class NotchHUD {
         case reminder(MeetingReminder)
         /// A call started in this app; offer to record it.
         case callPrompt(app: String)
+        /// The call's mic went quiet before the meeting's planned end; still recording until then.
+        case callSeemsOver(until: Date)
 
         var showsCard: Bool {
             switch self {
             case .hidden, .pill: false
-            case .recordingDetails, .announcement, .reminder, .callPrompt: true
+            case .recordingDetails, .announcement, .reminder, .callPrompt, .callSeemsOver: true
             }
         }
     }
@@ -87,6 +89,7 @@ final class NotchHUD {
 
     var mode: Mode {
         if let announcement, showsRecording { return .announcement(announcement) }
+        if let until = calls.keepsRecordingUntil, isRecording { return .callSeemsOver(until: until) }
         if let app = calls.prompt { return .callPrompt(app: app) }
         if let reminder = reminders.current { return .reminder(reminder) }
         guard isRecording, showsRecording else { return .hidden }
@@ -125,6 +128,7 @@ final class NotchHUD {
             _ = model.recordingState
             _ = reminders.current
             _ = calls.prompt
+            _ = calls.keepsRecordingUntil
         } onChange: { [weak self] in
             // Fires before the change lands; re-reading on the next turn sees the new value.
             Task { @MainActor in self?.observe() }
@@ -238,7 +242,7 @@ struct NotchGeometry: Equatable {
             return CGSize(width: notchWidth, height: topHeight)
         case .pill:
             return CGSize(width: hasNotch ? notchWidth + 2 * Self.wing : 2 * Self.wing + 12, height: topHeight)
-        case .recordingDetails, .announcement, .reminder, .callPrompt:
+        case .recordingDetails, .announcement, .reminder, .callPrompt, .callSeemsOver:
             return CGSize(width: max(Self.cardWidth, notchWidth + 2 * Self.wing), height: topHeight + Self.cardHeight)
         }
     }

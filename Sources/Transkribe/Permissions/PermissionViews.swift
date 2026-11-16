@@ -34,7 +34,17 @@ private struct PermissionRow: View {
                 .frame(width: 46, height: 46)
                 .background(item.tint, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.title).font(.headline)
+                HStack(spacing: 6) {
+                    Text(item.title).font(.headline)
+                    if !item.isRequired {
+                        Text("Optional")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.primary.opacity(0.08), in: Capsule())
+                    }
+                }
                 Text(item.detail).font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if item.state == .needsReopen {
@@ -91,8 +101,8 @@ private struct PermissionRow: View {
     }
 }
 
-/// Shown over the app at launch when a permission is missing (turned off since setup, or never
-/// given). It goes away by itself once everything is allowed.
+/// Shown over the app at launch when the microphone or call audio is missing (turned off since
+/// setup, or never given). It goes away by itself once both are allowed.
 struct PermissionsGate: View {
     @Environment(PermissionCenter.self) private var center
 
@@ -102,10 +112,10 @@ struct PermissionsGate: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Transkribe needs a few permissions")
+                        Text("Transkribe needs to hear your calls")
                             .font(.system(size: 32, weight: .bold))
                             .tracking(-0.6)
-                        Text("Some are missing or were turned off. Allow them to keep using Transkribe. Everything still stays on this Mac.")
+                        Text("Recording needs your microphone and the sound from calls. The optional ones add reminders, dictation and meeting tabs. Everything stays on this Mac.")
                             .font(.system(size: 16))
                             .foregroundStyle(.secondary)
                     }
