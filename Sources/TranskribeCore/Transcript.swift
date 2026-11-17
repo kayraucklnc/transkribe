@@ -190,6 +190,18 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
         meSpeaker ?? (tracks.contains { $0.source == .microphone } && speakers.contains(SpeakerID.me) ? SpeakerID.me : nil)
     }
 
+    /// Speakers whose side of the chat is already certain while the transcript is still being
+    /// worked on; nil once it's done (every side is). Voices can still be merged or renamed, but in
+    /// a Mic + System recording the track tells the side: the main microphone voice is you and every
+    /// voice from the call is someone else. Only other microphone voices (someone in the room, or
+    /// you) wait in the middle. In a single-track recording nobody's side is known until the end.
+    public var speakersWithSettledSide: Set<Int>? {
+        guard status != .done else { return nil }
+        let withCall = tracks.contains { $0.source == .microphone } && tracks.contains { $0.source == .system }
+        guard withCall else { return [] }
+        return Set(speakers.filter { !SpeakerID.isOnMicrophone($0) }).union([SpeakerID.me])
+    }
+
     /// Speakers in order of first appearance.
     public var speakers: [Int] {
         var seen = Set<Int>()
