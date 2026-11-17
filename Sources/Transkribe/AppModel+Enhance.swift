@@ -11,6 +11,7 @@ extension AppModel {
                 try? await Task.sleep(for: .seconds(45))
                 guard let self, self.settings.enhanceWhenIdle, self.settings.completedOnboarding,
                       self.settings.quality != .best, !self.isRecording, self.queueTask == nil,
+                      self.activity.isEmpty, // e.g. a stopped recording's last minutes
                       self.isIdleEnoughToEnhance(),
                       let next = self.transcripts.first(where: { $0.status == .done && ($0.quality ?? .balanced) != .best && !$0.segments.isEmpty })
                 else { continue }

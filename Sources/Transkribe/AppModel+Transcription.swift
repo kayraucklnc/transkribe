@@ -195,7 +195,8 @@ extension AppModel {
             $0.segments = TrackMerger.merge(progress.tracks.compactMap { $0 })
             $0.language = $0.language ?? progressUpdate.language
         }
-        if isLive, copilotSettings.intents {
+        // The tail of a stopped recording still feeds its meeting, unless a new recording took over.
+        if isLive, copilotSettings.intents, liveRecordingID == id || liveIntents?.meetingID == id {
             let committed = Self.label(progressUpdate.committed, track: track, turns: progressUpdate.turns,
                 withCall: transcript.tracks.contains { $0.source == .system }, callSpeech: callSpeech)
             receiveIntentSegments(id: id, track: track.fileName,
@@ -205,7 +206,8 @@ extension AppModel {
         if let reason = progressUpdate.pausedReason {
             activity[id] = .paused(reason)
         } else {
-            activity[id] = isLive ? .live : .transcribing(progress.overall)
+            // After Stop, the rest of a live transcription is ordinary progress with time left.
+            activity[id] = isLive && liveRecordingID == id ? .live : .transcribing(progress.overall)
         }
         if progressUpdate.pending.isEmpty, transcript.status == .transcribing {
             try? store.saveCheckpoint(
