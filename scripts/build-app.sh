@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # Builds build/Transkribe.app (release).
 # Usage: scripts/build-app.sh [--install]   (--install copies it to /Applications)
-# Signing: ad-hoc by default. Set DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" to sign
-# for distribution (hardened runtime, as notarization requires).
+# Signing, first match wins:
+#   DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"  for distribution (hardened runtime,
+#     as notarization requires).
+#   SIGN_IDENTITY, or a "Transkribe Local" code-signing certificate in the keychain: a stable
+#     identity for your own builds, so macOS keeps the microphone, Screen Recording and
+#     Accessibility permissions across rebuilds (create it once: scripts/make-local-cert.sh).
+#   Otherwise ad-hoc: macOS sees every build as a new app and asks for permissions again.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -40,8 +45,19 @@ if [[ -n "${DEVELOPER_ID:-}" ]]; then
   codesign --force --options runtime --timestamp --entitlements Resources/Transkribe.entitlements \
     --sign "$DEVELOPER_ID" --identifier kayrauckilinc.dev.transkribe "$APP"
 else
-  echo "→ Signing (ad-hoc)"
-  codesign --force --deep --sign - --identifier kayrauckilinc.dev.transkribe "$APP"
+  LOCAL="${SIGN_IDENTITY:-}"
+  if [[ -z "$LOCAL" ]] && security find-identity -v -p codesigning 2>/dev/null | grep -q '"Transkribe Local"'; then
+    LOCAL="Transkribe Local"
+  fi
+  if [[ -n "$LOCAL" ]]; then
+    echo "→ Signing with $LOCAL (permissions stay across rebuilds)"
+    codesign --force --sign "$LOCAL" "$APP/Contents/MacOS/transkribe-mcp"
+    codesign --force --sign "$LOCAL" --identifier kayrauckilinc.dev.transkribe "$APP"
+  else
+    echo "→ Signing (ad-hoc). macOS will ask for permissions again after installing this build;"
+    echo "  run scripts/make-local-cert.sh once to keep them across rebuilds."
+    codesign --force --deep --sign - --identifier kayrauckilinc.dev.transkribe "$APP"
+  fi
 fi
 
 if [[ "${1:-}" == "--install" ]]; then
