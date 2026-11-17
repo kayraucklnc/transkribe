@@ -134,6 +134,8 @@ final class AppModel {
         }
         startEnhancing()
         backfillVoices()
+        // Models no longer used (e.g. large-v3, which dropped speech) only take up space.
+        Task.detached(priority: .background) { ModelFiles.removeRetired() }
     }
 
     func finishOnboarding() {
@@ -141,25 +143,23 @@ final class AppModel {
         preloadModel()
     }
 
-    /// Instant → macOS's recognizer; Balanced/Best → Whisper (turbo / full), with the European
-    /// model for English, Italian and similar languages.
+    /// Builds what `EngineCatalog.setup` picked for this quality and the user's languages.
     static func makeEngine(settings: TranscriptionSettings, quality: TranscriptionQuality, european: ParakeetEngine?,
                            usesNeuralEngine: Bool = true) -> any SpeechEngine {
         let languages = Set(settings.languages.isEmpty ? Array(TranscriptionEngine.supportedLanguages) : settings.languages)
-        let usesEuropean = languages.contains(where: EngineCatalog.usesEuropeanModel)
-        switch quality {
-        case .instant:
-            if #available(macOS 26, *), AppleSpeechEngine.isAvailable {
+        var appleAvailable = false
+        if #available(macOS 26, *) { appleAvailable = AppleSpeechEngine.isAvailable }
+        switch EngineCatalog.setup(for: quality, languages: Array(languages), appleAvailable: appleAvailable) {
+        case .apple:
+            if #available(macOS 26, *) {
                 return AppleSpeechEngine(languages: Array(languages), vocabulary: settings.vocabulary)
             }
             fallthrough
-        case .balanced:
-            return TranscriptionEngine(languages: languages, vocabulary: settings.vocabulary, european: usesEuropean ? european : nil,
-                                       usesNeuralEngine: usesNeuralEngine)
-        case .best:
-            return TranscriptionEngine(model: TranscriptionEngine.bestModel, languages: languages,
-                                       vocabulary: settings.vocabulary, european: usesEuropean ? european : nil,
-                                       usesNeuralEngine: usesNeuralEngine)
+        case .whisper:
+            let model = EngineCatalog.whisperModel(for: quality)
+            let usesEuropean = languages.contains(where: EngineCatalog.usesEuropeanModel)
+            return TranscriptionEngine(model: model, languages: languages, vocabulary: settings.vocabulary,
+                                       european: usesEuropean ? european : nil, usesNeuralEngine: usesNeuralEngine)
         }
     }
 
