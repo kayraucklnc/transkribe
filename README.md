@@ -98,7 +98,7 @@ cd transkribe
 scripts/build-app.sh --install   # builds and copies Transkribe.app to /Applications
 ```
 
-`scripts/make-dmg.sh` builds a drag-to-Applications disk image instead. On first launch Transkribe downloads its speech models (about 650 MB, or 1 GB for the most accurate setting) and optimizes them for your Mac. That happens once; after that it works offline.
+`scripts/make-dmg.sh` builds a drag-to-Applications disk image instead. On first launch Transkribe downloads its speech models (about 650 MB, or 1.6 GB for Best) and optimizes them for your Mac. That happens once; after that it works offline.
 
 ### Permissions
 
@@ -307,6 +307,17 @@ swift build
 swift test                                                                  # unit tests
 TRANSKRIBE_INTEGRATION=1 swift test --filter TranscriptionIntegrationTests  # real models, downloads ~650 MB
 ```
+
+### Choosing speech models
+
+People pick a speed (Instant, Balanced, Best) and the languages they speak; `EngineCatalog.setup` picks the model. Those choices come from measuring real conversations, not from model names or English leaderboards. To compare models on your own recordings:
+
+```bash
+TRANSKRIBE_EVAL_DIR=~/calls TRANSKRIBE_EVAL_MODELS=turbo+parakeet,turbo-full+parakeet TRANSKRIBE_EVAL_RUNS=2 \
+  swift test --filter ModelEvaluationTests
+```
+
+`TRANSKRIBE_EVAL_DIR` holds conversation folders (copied from the Library) or audio files. For each model it reports speed, text per second of speech, stretches over 20 s with no text, lines in another language's spelling, how much two runs differ, and word error rate where a `<track>.reference.txt` sits next to the audio. Models download on first use.
 
 The screenshots above use a fictional library voiced by macOS `say`. To recreate it:
 
