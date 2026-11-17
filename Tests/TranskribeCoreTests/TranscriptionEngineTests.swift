@@ -35,14 +35,24 @@ import Testing
 
 @Suite struct SupportedLanguageTests {
     @Test func votesAmongSupportedLanguages() {
-        #expect(TranscriptionEngine.vote(["tr", "en", "tr"], fallback: nil) == "tr")
+        var choice = LanguageChoice()
+        #expect(choice.choose(votes: ["tr", "en", "tr"], supported: TranscriptionEngine.supportedLanguages) == "tr")
         #expect(TranscriptionEngine.supportedLanguages == ["en", "tr", "it"])
     }
 
     @Test func unsupportedDetectionsFallBack() {
         // A quick "А ну да" heard as Russian must not switch a Turkish conversation to Russian.
-        #expect(TranscriptionEngine.vote(["ru"], fallback: "tr") == "tr")
-        #expect(TranscriptionEngine.vote(["ru", "en"], fallback: "tr") == "en")
-        #expect(TranscriptionEngine.vote([], fallback: nil) == "en")
+        var choice = LanguageChoice(current: "tr")
+        #expect(choice.choose(votes: ["ru"], supported: TranscriptionEngine.supportedLanguages) == "tr")
+    }
+
+    @Test func samplesLongAudioAboutOnceAMinute() {
+        let rate = 16_000
+        #expect(TranscriptionEngine.languageSamples(count: rate * 20) == [0..<(rate * 20)])
+        #expect(TranscriptionEngine.languageSamples(count: rate * 35).count == 3)
+        let tenMinutes = TranscriptionEngine.languageSamples(count: rate * 600)
+        #expect(tenMinutes.count == 10)
+        #expect(tenMinutes.first?.lowerBound == 0)
+        #expect(tenMinutes.last?.upperBound == rate * 600)
     }
 }

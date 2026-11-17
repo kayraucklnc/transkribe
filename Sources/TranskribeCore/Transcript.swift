@@ -127,6 +127,8 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var recordingEndedAt: Date?
     /// The quality setting the current text was produced with (nil = before qualities existed).
     public var quality: TranscriptionQuality?
+    /// Transcribed quickly while recording; redone at this quality in the background (nil = nothing owed).
+    public var upgradeQuality: TranscriptionQuality?
     /// Speakers linked to people the user knows.
     public var speakerPeople: [Int: UUID] = [:]
     /// Recordings that continue the same conversation share a thread.
@@ -160,7 +162,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, title, createdAt, duration, language, tracks, segments, status, speakerNames, meSpeaker, summary, chat, quality, speakerPeople, threadID
-        case speakerVoiceprints, actionItems, recordingEndedAt
+        case speakerVoiceprints, actionItems, recordingEndedAt, upgradeQuality
     }
 
     public init(from decoder: Decoder) throws {
@@ -179,6 +181,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
         chat = try container.decodeIfPresent(AIChat.self, forKey: .chat)
         recordingEndedAt = try container.decodeIfPresent(Date.self, forKey: .recordingEndedAt)
         quality = try container.decodeIfPresent(TranscriptionQuality.self, forKey: .quality)
+        upgradeQuality = try container.decodeIfPresent(TranscriptionQuality.self, forKey: .upgradeQuality)
         speakerPeople = try container.decodeIfPresent([Int: UUID].self, forKey: .speakerPeople) ?? [:]
         threadID = try container.decodeIfPresent(UUID.self, forKey: .threadID)
         speakerVoiceprints = try container.decodeIfPresent([Int: [Float]].self, forKey: .speakerVoiceprints) ?? [:]
@@ -188,6 +191,27 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     /// The user's own speaker: their explicit choice, or the microphone track of a Mic + System recording.
     public var resolvedMeSpeaker: Int? {
         meSpeaker ?? (tracks.contains { $0.source == .microphone } && speakers.contains(SpeakerID.me) ? SpeakerID.me : nil)
+    }
+
+    /// Speakers whose side of the chat is already certain while the transcript is still being
+    /// worked on; nil once it's done (every side is). Voices can still be merged or renamed, but in
+    /// a Mic + System recording the track tells the side: the main microphone voice is you and every
+    /// voice from the call is someone else. Only other microphone voices (someone in the room, or
+    /// you) wait in the middle. In a single-track recording nobody's side is known until the end.
+    public var speakersWithSettledSide: Set<Int>? {
+        guard status != .done else { return nil }
+        let withCall = tracks.contains { $0.source == .microphone } && tracks.contains { $0.source == .system }
+        guard withCall else { return [] }
+        return Set(speakers.filter { !SpeakerID.isOnMicrophone($0) }).union([SpeakerID.me])
+    }
+
+    /// Whether a redo at a better quality may replace `old`. A pass that comes back with clearly less
+    /// text dropped speech (Whisper large-v3 skipped whole stretches of a Turkish call), so the
+    /// existing text is kept; removing a few repeated or made-up words stays within the margin.
+    public static func isUpgrade(_ new: [Segment], over old: [Segment]) -> Bool {
+        let before = old.reduce(0) { $0 + $1.text.count }
+        let after = new.reduce(0) { $0 + $1.text.count }
+        return before == 0 || Double(after) >= Double(before) * 0.9
     }
 
     /// Speakers in order of first appearance.

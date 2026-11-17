@@ -23,6 +23,7 @@ extension AppModel {
     func setSpeakerCount(_ count: Int?, for id: Transcript.ID) {
         guard let transcript = transcript(id), transcript.status == .done, activity[id] == nil else { return }
         activity[id] = .identifyingSpeakers
+        keepUsersVersion(of: id)
         Task {
             defer { activity[id] = nil }
             do {
@@ -51,8 +52,22 @@ extension AppModel {
                 try await engine.prepare(onProgress: { [weak self] in self?.reportPreparation($0) })
             } catch {
                 modelPreparation = nil
+                return
             }
+            // Quietly get the recording model ready too, so the first recording doesn't wait for it.
+            try? await engineWhileRecording().prepare(onProgress: { _ in })
         }
+    }
+
+    /// The engine a recording is transcribed with while it runs: one that keeps up with the call.
+    /// With Best chosen, that's Balanced; the recording is redone at Best right after.
+    func engineWhileRecording() -> any SpeechEngine {
+        let quality = settings.quality.whileRecording
+        guard quality != settings.quality else { return engine }
+        if let recordingEngine { return recordingEngine }
+        let made = Self.makeEngine(settings: settings, quality: quality, european: european)
+        recordingEngine = made
+        return made
     }
 
     /// Transcribes pending items one at a time, oldest first.
@@ -104,7 +119,7 @@ extension AppModel {
     /// finishes with speaker labels and a merged transcript.
     func runPipeline(for transcript: Transcript, sources: [(AudioTrack, AudioSource)], isLive: Bool,
                      engine overrideEngine: (any SpeechEngine)? = nil, quality overrideQuality: TranscriptionQuality? = nil,
-                     showsProgress: Bool = true) async throws {
+                     showsProgress: Bool = true, replacesOnlyIfComplete: Bool = false) async throws {
         let engine = overrideEngine ?? self.engine
         let quality = overrideQuality ?? settings.quality
         let id = transcript.id
@@ -158,11 +173,18 @@ extension AppModel {
         let language = TranscriptionEngine.dominantLanguage(
             weights: results.values.map(\.languageWeights).reduce([:], TranscriptionEngine.merge)
         )
+        // Stopped meanwhile (e.g. the user started fixing this version by hand): keep what's there.
+        try Task.checkCancellation()
+        if replacesOnlyIfComplete, let existing = self.transcript(id), !Transcript.isUpgrade(segments, over: existing.segments) {
+            throw PipelineError.lostText
+        }
         update(id, persist: true) {
             $0.segments = segments
             $0.language = language ?? $0.language // final, text-weighted choice replaces live guesses
             $0.status = .done
             $0.quality = quality
+            // A recording done quickly owes a pass at the chosen quality; a better pass settles it.
+            $0.upgradeQuality = TranscriptionQuality.upgrade(to: isLive ? settings.quality : $0.upgradeQuality, after: quality)
             if $0.title.hasPrefix(TitleGenerator.recordingPrefix), let suggestion = TitleGenerator.suggestedTitle(from: segments) {
                 $0.title = suggestion
             }
@@ -195,7 +217,8 @@ extension AppModel {
             $0.segments = TrackMerger.merge(progress.tracks.compactMap { $0 })
             $0.language = $0.language ?? progressUpdate.language
         }
-        if isLive, copilotSettings.intents {
+        // The tail of a stopped recording still feeds its meeting, unless a new recording took over.
+        if isLive, copilotSettings.intents, liveRecordingID == id || liveIntents?.meetingID == id {
             let committed = Self.label(progressUpdate.committed, track: track, turns: progressUpdate.turns,
                 withCall: transcript.tracks.contains { $0.source == .system }, callSpeech: callSpeech)
             receiveIntentSegments(id: id, track: track.fileName,
@@ -205,7 +228,8 @@ extension AppModel {
         if let reason = progressUpdate.pausedReason {
             activity[id] = .paused(reason)
         } else {
-            activity[id] = isLive ? .live : .transcribing(progress.overall)
+            // After Stop, the rest of a live transcription is ordinary progress with time left.
+            activity[id] = isLive && liveRecordingID == id ? .live : .transcribing(progress.overall)
         }
         if progressUpdate.pending.isEmpty, transcript.status == .transcribing {
             try? store.saveCheckpoint(
@@ -301,4 +325,9 @@ final class PipelineProgress {
     var overall: Double {
         fraction.isEmpty ? 0 : fraction.reduce(0, +) / Double(fraction.count)
     }
+}
+
+enum PipelineError: Error {
+    /// A redo came back with clearly less text than what's there; the existing text is kept.
+    case lostText
 }

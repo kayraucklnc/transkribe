@@ -4,7 +4,7 @@ import WhisperKit
 /// Runs Whisper locally via WhisperKit (Core ML). Downloads the model once, then works offline.
 public actor TranscriptionEngine {
     /// Whisper large-v3 turbo, quantized: multilingual (Turkish included), ~630 MB on disk.
-    public static let defaultModel = "openai_whisper-large-v3-v20240930_turbo_632MB"
+    public static let defaultModel = EngineCatalog.turboModel
 
     public enum Preparation: Sendable, Equatable {
         case downloading(Double)
@@ -17,8 +17,6 @@ public actor TranscriptionEngine {
     /// stretch is never mistaken for a third language, and decoding with a fixed language
     /// makes Whisper's repetition loops rarer. Empty = any language.
     public static let supportedLanguages: Set<String> = ["en", "tr", "it"]
-    /// Large-v3 (full): slower, most accurate, notably better on Turkish.
-    public static let bestModel = "openai_whisper-large-v3_947MB"
 
     public struct Output: Sendable {
         public var segments: [RawSegment]
@@ -39,8 +37,8 @@ public actor TranscriptionEngine {
     private var loaded: LoadedModel?
     private var preparing: Task<LoadedModel, Error>?
     private var isRunning = false
-    /// Last language confirmed by detection, used for stretches too short or unclear to tell.
-    private var lastLanguage: String?
+    /// The conversation's language so far: one unclear stretch doesn't switch it.
+    private var languageChoice = LanguageChoice()
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
     public init(
@@ -123,9 +121,18 @@ public actor TranscriptionEngine {
     ) async throws -> Output {
         // The actor can interleave at `await`s; WhisperKit must only run one job at a time
         // (a live recording and the import queue may both be transcribing).
+        try await transcribe(samples: samples, language: nil, onSegments: onSegments)
+    }
+
+    /// Transcribes in `language` when it's one of the user's languages, without detecting it again.
+    public func transcribe(
+        samples: [Float],
+        language: String?,
+        onSegments: @escaping @Sendable ([RawSegment]) -> Void = { _ in }
+    ) async throws -> Output {
         await acquire()
         defer { release() }
-        return try await runTranscription(samples: samples, onSegments: onSegments)
+        return try await runTranscription(samples: samples, language: language, onSegments: onSegments)
     }
 
     private func acquire() async {
@@ -146,6 +153,7 @@ public actor TranscriptionEngine {
 
     private func runTranscription(
         samples: [Float],
+        language known: String?,
         onSegments: @escaping @Sendable ([RawSegment]) -> Void
     ) async throws -> Output {
         let whisper = try await model().whisper
@@ -157,10 +165,18 @@ public actor TranscriptionEngine {
         }
         defer { whisper.segmentDiscoveryCallback = nil }
 
-        let language = await chooseLanguage(whisper, samples: samples)
+        let language: String?
+        if let known, languages.isEmpty || languages.contains(known) {
+            language = known
+        } else {
+            language = await chooseLanguage(whisper, samples: samples)
+        }
 
         if let european, let language, EngineCatalog.usesEuropeanModel(for: language),
-           let segments = try? await european.transcribe(samples: samples) {
+           let segments = try? await european.transcribe(samples: samples),
+           // Spelling from none of the user's languages means the audio wasn't in this one
+           // (Turkish sent here came back as Icelandic-looking words): Whisper does it instead.
+           TranscriptMetrics.garbledLines(segments, languages: languages.isEmpty ? [language] : languages).isEmpty {
             try Task.checkCancellation()
             let corrected = Self.applyVocabulary(segments, vocabulary)
             onSegments(corrected)
@@ -178,6 +194,7 @@ public actor TranscriptionEngine {
             .map(Self.raw)
             .sorted { $0.start < $1.start }
         segments = try await repairLoops(segments, samples: samples, whisper: whisper, language: language ?? results.first?.language)
+        segments = try await repairGarbled(segments, samples: samples, whisper: whisper, language: language ?? results.first?.language)
         segments = Self.applyVocabulary(segments, vocabulary)
         let weights = results.reduce(into: [String: Int]()) { $0[language ?? $1.language, default: 0] += $1.text.count }
         return Output(segments: segments, language: Self.dominantLanguage(weights: weights), languageWeights: weights)
@@ -216,27 +233,48 @@ public actor TranscriptionEngine {
     /// back as some other language; it then reuses the last language this engine settled on.
     private func chooseLanguage(_ whisper: WhisperKit, samples: [Float]) async -> String? {
         guard !languages.isEmpty else { return nil }
-        let slice = Int(AudioDecoder.sampleRate) * 30
-        let starts = samples.count <= slice ? [0] : [0, (samples.count - slice) / 2, samples.count - slice]
         var votes: [String] = []
-        for start in starts where samples.count > start {
-            let piece = Array(samples[start..<min(samples.count, start + slice)])
-            if let detection = try? await whisper.detectLangauge(audioArray: piece) { votes.append(detection.language) }
+        for range in Self.languageSamples(count: samples.count) {
+            if let detection = try? await whisper.detectLangauge(audioArray: Array(samples[range])) { votes.append(detection.language) }
         }
-        let chosen = Self.vote(votes, fallback: lastLanguage, supported: languages)
-        if let chosen { lastLanguage = chosen }
-        return chosen
+        return languageChoice.choose(votes: votes, supported: languages)
     }
 
-    /// The supported language most samples agreed on; otherwise `fallback`; otherwise the first
-    /// supported language in a stable order.
-    static func vote(_ detected: [String], fallback: String?, supported: Set<String> = supportedLanguages) -> String? {
-        guard !supported.isEmpty else { return detected.first ?? fallback }
-        let counts = Dictionary(detected.filter(supported.contains).map { ($0, 1) }, uniquingKeysWith: +)
-        if let best = counts.max(by: { $0.value < $1.value || ($0.value == $1.value && $0.key > $1.key) })?.key {
-            return best
+    /// Where to ask Whisper for the language: 30-second samples spread over the audio, about one
+    /// a minute (3 to 10), so a long stretch isn't judged by a few words of English in it.
+    static func languageSamples(count: Int, rate: Int = Int(AudioDecoder.sampleRate)) -> [Range<Int>] {
+        let slice = rate * 30
+        guard count > slice else { return count > 0 ? [0..<count] : [] }
+        let wanted = min(10, max(3, count / (rate * 60) + 1))
+        let last = count - slice
+        return (0..<wanted).map { index in
+            let start = last * index / (wanted - 1)
+            return start..<(start + slice)
         }
-        return fallback ?? supported.sorted().first
+    }
+
+    /// Whisper sometimes writes another language's spelling over speech it couldn't follow
+    /// ("Eða við tað…" in a Turkish call). Those lines are redone on their own, strictly, in the
+    /// stretch's language; a cleaner result replaces them.
+    private func repairGarbled(_ segments: [RawSegment], samples: [Float], whisper: WhisperKit, language: String?) async throws -> [RawSegment] {
+        let check = languages.isEmpty ? Set(language.map { [$0] } ?? []) : languages
+        let garbled = TranscriptMetrics.garbledLines(segments, languages: check)
+        guard !garbled.isEmpty else { return segments }
+        var result = segments
+        let rate = AudioDecoder.sampleRate
+        for line in garbled {
+            guard let index = result.firstIndex(of: line) else { continue }
+            let start = max(0, line.start - 1), end = min(Double(samples.count) / rate, line.end + 1)
+            guard end - start > 0.5 else { continue }
+            let clip = Array(samples[Int(start * rate)..<min(samples.count, Int(end * rate))])
+            guard let redo = try? await whisper.transcribe(audioArray: clip, decodeOptions: Self.options(language: language, strict: true)) else { continue }
+            try Task.checkCancellation()
+            let replacement = redo.flatMap(\.segments).map(Self.raw).map { TrackTranscriber.shift($0, by: start) }
+                .filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+            guard !replacement.isEmpty, TranscriptMetrics.garbledLines(replacement, languages: check).isEmpty else { continue }
+            result.replaceSubrange(index...index, with: replacement)
+        }
+        return result.sorted { $0.start < $1.start }
     }
 
     /// The user's names and terms as a decoding prompt, which biases Whisper toward them.

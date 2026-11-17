@@ -6,6 +6,17 @@ public protocol SpeechEngine: AnyObject, Sendable {
     /// Downloads (first time only) and loads whatever the engine needs.
     func prepare(onProgress: @escaping @Sendable (TranscriptionEngine.Preparation) -> Void) async throws
     func transcribe(samples: [Float], onSegments: @escaping @Sendable ([RawSegment]) -> Void) async throws -> TranscriptionEngine.Output
+    /// Same, in a language already known from the audio around it. Short clips (a retried gap)
+    /// are too short to tell Turkish from English reliably.
+    func transcribe(samples: [Float], language: String?,
+                    onSegments: @escaping @Sendable ([RawSegment]) -> Void) async throws -> TranscriptionEngine.Output
+}
+
+public extension SpeechEngine {
+    func transcribe(samples: [Float], language: String?,
+                    onSegments: @escaping @Sendable ([RawSegment]) -> Void) async throws -> TranscriptionEngine.Output {
+        try await transcribe(samples: samples, onSegments: onSegments)
+    }
 }
 
 extension TranscriptionEngine: SpeechEngine {}

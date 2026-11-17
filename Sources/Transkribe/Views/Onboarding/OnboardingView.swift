@@ -128,7 +128,7 @@ struct OnboardingView: View {
                     Text("Make transcripts even better while you're away").font(.callout.weight(.semibold))
                     Text(draft.quality == .best
                          ? "Already at the best quality."
-                         : "When your Mac is idle and plugged in, Transkribe quietly redoes recent conversations at the highest quality\(draft.quality == .best ? "" : " (downloads about 1 GB once)").")
+                         : "When your Mac is idle and plugged in, Transkribe quietly redoes recent conversations at the highest quality\(draft.quality == .best ? "" : " (downloads about \(String(format: "%.1f", Double(EngineCatalog.downloadSize(for: .best, languages: draft.languages)) / 1_000)) GB once)").")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

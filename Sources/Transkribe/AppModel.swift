@@ -62,10 +62,15 @@ final class AppModel {
             if oldValue.quality != settings.quality || oldValue.languages != settings.languages
                 || oldValue.vocabulary != settings.vocabulary {
                 engine = Self.makeEngine(settings: settings, quality: settings.quality, european: european)
+                recordingEngine = nil
                 preloadModel()
             }
         }
     }
+    /// The faster engine recordings use when `engine` can't keep up live (Best); made on first use.
+    @ObservationIgnored var recordingEngine: (any SpeechEngine)?
+    /// Background passes that failed this session, so they aren't retried in a loop.
+    @ObservationIgnored var failedUpgrades: Set<Transcript.ID> = []
     var copilotSettings: CopilotSettings {
         didSet {
             copilotSettings.save()
@@ -129,6 +134,8 @@ final class AppModel {
         }
         startEnhancing()
         backfillVoices()
+        // Models no longer used (e.g. large-v3, which dropped speech) only take up space.
+        Task.detached(priority: .background) { ModelFiles.removeRetired() }
     }
 
     func finishOnboarding() {
@@ -136,25 +143,23 @@ final class AppModel {
         preloadModel()
     }
 
-    /// Instant → macOS's recognizer; Balanced/Best → Whisper (turbo / full), with the European
-    /// model for English, Italian and similar languages.
+    /// Builds what `EngineCatalog.setup` picked for this quality and the user's languages.
     static func makeEngine(settings: TranscriptionSettings, quality: TranscriptionQuality, european: ParakeetEngine?,
                            usesNeuralEngine: Bool = true) -> any SpeechEngine {
         let languages = Set(settings.languages.isEmpty ? Array(TranscriptionEngine.supportedLanguages) : settings.languages)
-        let usesEuropean = languages.contains(where: EngineCatalog.usesEuropeanModel)
-        switch quality {
-        case .instant:
-            if #available(macOS 26, *), AppleSpeechEngine.isAvailable {
+        var appleAvailable = false
+        if #available(macOS 26, *) { appleAvailable = AppleSpeechEngine.isAvailable }
+        switch EngineCatalog.setup(for: quality, languages: Array(languages), appleAvailable: appleAvailable) {
+        case .apple:
+            if #available(macOS 26, *) {
                 return AppleSpeechEngine(languages: Array(languages), vocabulary: settings.vocabulary)
             }
             fallthrough
-        case .balanced:
-            return TranscriptionEngine(languages: languages, vocabulary: settings.vocabulary, european: usesEuropean ? european : nil,
-                                       usesNeuralEngine: usesNeuralEngine)
-        case .best:
-            return TranscriptionEngine(model: TranscriptionEngine.bestModel, languages: languages,
-                                       vocabulary: settings.vocabulary, european: usesEuropean ? european : nil,
-                                       usesNeuralEngine: usesNeuralEngine)
+        case .whisper:
+            let model = EngineCatalog.whisperModel(for: quality)
+            let usesEuropean = languages.contains(where: EngineCatalog.usesEuropeanModel)
+            return TranscriptionEngine(model: model, languages: languages, vocabulary: settings.vocabulary,
+                                       european: usesEuropean ? european : nil, usesNeuralEngine: usesNeuralEngine)
         }
     }
 
@@ -254,6 +259,7 @@ final class AppModel {
             transcript.speakerNames[speaker] = nil
             transcript.speakerPeople[speaker] = nil
         }
+        keepUsersVersion(of: id)
         showToast("Speakers merged")
         Task(priority: .utility) { await learnVoices(of: id, recognize: false) }
     }
@@ -270,12 +276,21 @@ final class AppModel {
                 return segment
             }
         }
+        keepUsersVersion(of: id)
+    }
+
+    /// The user is fixing this version by hand: a background pass at a better quality would replace
+    /// their fixes, so it's dropped (and stopped, if it's running).
+    func keepUsersVersion(of id: Transcript.ID) {
+        if transcript(id)?.upgradeQuality != nil { update(id, persist: true) { $0.upgradeQuality = nil } }
+        if enhancingID == id { startEnhancing() }
     }
 
     /// Replaces a message's text with the user's fix and learns the names and terms they corrected.
     func editText(of segmentIDs: [Segment.ID], from old: String, to new: String, in id: Transcript.ID) {
         guard old != new else { return }
         update(id, persist: true) { $0.segments = SegmentEditing.replacing(segmentIDs, in: $0.segments, with: new) }
+        keepUsersVersion(of: id)
         let learned = CorrectionLearner.newTerms(from: old, to: new, known: settings.vocabulary)
         if learned.isEmpty {
             showToast("Text fixed")

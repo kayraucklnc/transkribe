@@ -17,6 +17,8 @@ extension AppModel {
         startFailure = nil
         selection = nil
         levels = Array(repeating: 0, count: Self.levelHistory)
+        // Live text needs the Mac to keep up: a background pass waits until the recording ends.
+        if enhancingID != nil { startEnhancing() }
         let source = recordingSource
         let transcript = Transcript(title: title ?? TitleGenerator.recordingTitle(), tracks: [])
         let recorder = RecordingSession(source: source, directory: store.directory(for: transcript))
@@ -53,10 +55,6 @@ extension AppModel {
         update(draft.id, persist: true) { $0.recordingEndedAt = Date() }
         session = nil
         Task {
-            defer {
-                recordingState = .idle
-                levels = Array(repeating: 0, count: Self.levelHistory)
-            }
             let id = draft.id
             do {
                 let tracks = try await recorder.stop()
@@ -70,9 +68,14 @@ extension AppModel {
                 live?.sources.forEach { $0.markComplete() }
                 if let task = live?.task {
                     // The last batch is transcribed from the live copy; then the transcript is final.
+                    // That can take minutes when live text fell behind, so the recording is over now:
+                    // the rest shows as ordinary transcription progress.
                     live = nil
+                    releaseRecording(id)
+                    showRemainingTranscription(of: id, startedAt: recorder.startedAt)
                     await finishLiveTranscription(id: id, task: task, startedAt: recorder.startedAt)
                 } else {
+                    releaseRecording(id)
                     await finishTopicGraph(for: id, startedAt: recorder.startedAt)
                     update(id, persist: true) { $0.status = .pending }
                     processQueue()
@@ -82,23 +85,25 @@ extension AppModel {
             } catch RecordingError.nothingRecorded {
                 let task = live?.task
                 live = nil
+                releaseRecording(id)
                 await MeetingCompletion.abandon(transcription: task) {
                     await finishTopicGraph(for: id, startedAt: recorder.startedAt)
                 }
                 if let transcript = transcript(id) { delete(transcript.id) } else { try? store.delete(draft) }
                 show(RecordingError.nothingRecorded)
-                liveIntents?.pause()
+                if liveIntents?.meetingID == id { liveIntents?.pause() }
                 sendWebhook(.meetingEnded, for: draft)
             } catch {
                 let task = live?.task
                 live = nil
+                releaseRecording(id)
                 await MeetingCompletion.abandon(transcription: task) {
                     await finishTopicGraph(for: id, startedAt: recorder.startedAt)
                 }
                 // Keep the audio: it is transcribed again from the saved files.
                 update(id, persist: true) { $0.status = .pending }
                 show(error)
-                liveIntents?.pause()
+                if liveIntents?.meetingID == id { liveIntents?.pause() }
                 sendWebhook(.meetingEnded, for: transcript(id) ?? draft)
             }
         }
@@ -124,10 +129,30 @@ extension AppModel {
         let pairs = zip(transcript.tracks, sources).map { ($0, $1 as AudioSource) }
         let task = Task { [weak self] in
             guard let self else { return }
-            try await self.runPipeline(for: transcript, sources: pairs, isLive: true)
+            // A model that keeps up with the call, so Stop shows the transcript in seconds.
+            try await self.runPipeline(for: transcript, sources: pairs, isLive: true,
+                                       engine: self.engineWhileRecording(), quality: self.settings.quality.whileRecording)
         }
         live = (task, sources)
         activity[transcript.id] = .live
+    }
+
+    /// The recording is over: the record button is free again and the conversation stops showing
+    /// as live, even while its last minutes are still being transcribed.
+    private func releaseRecording(_ id: Transcript.ID) {
+        recordingState = .idle
+        levels = Array(repeating: 0, count: Self.levelHistory)
+        if liveRecordingID == id { liveRecordingID = nil }
+    }
+
+    /// Shows what live transcription still has to do as a progress card with the time left. The
+    /// rate so far (since the recording started) predicts the rest, so the estimate is right away.
+    private func showRemainingTranscription(of id: Transcript.ID, startedAt: Date?) {
+        guard let transcript = transcript(id) else { return }
+        let reached = transcript.segments.map(\.end).max() ?? 0
+        activity[id] = .transcribing(transcript.duration > 0 ? min(1, reached / transcript.duration) : 0)
+        activityStarted[id] = startedAt ?? Date()
+        selection = id
     }
 
     private func finishLiveTranscription(id: Transcript.ID, task: Task<Void, Error>, startedAt: Date?) async {
@@ -141,10 +166,11 @@ extension AppModel {
             update(id, persist: true) { $0.status = .pending; $0.segments = [] }
             processQueue()
         }, sendEnded: {
+            // A new recording may have started meanwhile: only this conversation's state is cleared.
             activity[id] = nil
+            activityStarted[id] = nil
             finishLiveIntents(id: id)
-            liveRecordingID = nil
-            selection = id
+            if liveRecordingID == id { liveRecordingID = nil }
             if let transcript = transcript(id) { sendWebhook(.meetingEnded, for: transcript) }
         })
     }
