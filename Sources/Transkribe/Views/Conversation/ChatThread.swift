@@ -174,6 +174,29 @@ struct TypingIndicator: View {
     }
 }
 
+/// A quiet line on a recording that was transcribed quickly to keep up live: the more accurate
+/// version replaces it by itself, and fixing it by hand keeps this one.
+private struct UpgradeNote: View {
+    let isRunning: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if isRunning {
+                ProgressView().controlSize(.mini)
+            } else {
+                Image(systemName: "sparkles")
+            }
+            Text(isRunning
+                 ? "Making this more accurate in the background. It updates by itself."
+                 : "Quick version. A more accurate one follows in the background.")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .help("Fixing the text or speakers by hand keeps this version instead.")
+        .transition(.opacity)
+    }
+}
+
 /// Progress for work still running on this conversation.
 private struct ThreadStatus: View {
     let transcript: Transcript
@@ -225,6 +248,9 @@ private struct ThreadStatus: View {
             case (.done, nil) where transcript.segments.isEmpty:
                 ContentUnavailableView("No speech found", systemImage: "waveform.slash",
                                        description: Text("This recording doesn't seem to contain any speech."))
+            case (.done, nil) where transcript.upgradeQuality != nil:
+                UpgradeNote(isRunning: model.enhancingID == transcript.id)
+                    .padding(.bottom, 14)
             default:
                 EmptyView()
             }

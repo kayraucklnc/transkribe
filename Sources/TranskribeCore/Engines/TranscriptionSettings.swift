@@ -8,6 +8,27 @@ public enum TranscriptionQuality: String, Codable, CaseIterable, Sendable {
     case balanced
     /// Downloads once (~1 GB): most accurate, a bit slower.
     case best
+
+    /// Higher is more accurate.
+    var accuracy: Int {
+        switch self {
+        case .instant: 0
+        case .balanced: 1
+        case .best: 2
+        }
+    }
+
+    /// What a recording is transcribed with while it runs. Best can't keep up with both sides of
+    /// a call (on an M4 Pro, a real call ran at 0.7x real time with Best and 3x with Balanced), so
+    /// it's done with Balanced first and redone at Best in the background.
+    public var whileRecording: TranscriptionQuality { self == .best ? .balanced : self }
+
+    /// The more accurate pass still owed after text was produced at `produced`: `wanted` if it's
+    /// better than what's there, otherwise nothing.
+    public static func upgrade(to wanted: TranscriptionQuality?, after produced: TranscriptionQuality) -> TranscriptionQuality? {
+        guard let wanted, wanted.accuracy > produced.accuracy else { return nil }
+        return wanted
+    }
 }
 
 public struct TranscriptionSettings: Codable, Equatable, Sendable {

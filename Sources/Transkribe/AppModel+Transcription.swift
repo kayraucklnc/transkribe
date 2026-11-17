@@ -23,6 +23,7 @@ extension AppModel {
     func setSpeakerCount(_ count: Int?, for id: Transcript.ID) {
         guard let transcript = transcript(id), transcript.status == .done, activity[id] == nil else { return }
         activity[id] = .identifyingSpeakers
+        keepUsersVersion(of: id)
         Task {
             defer { activity[id] = nil }
             do {
@@ -51,8 +52,22 @@ extension AppModel {
                 try await engine.prepare(onProgress: { [weak self] in self?.reportPreparation($0) })
             } catch {
                 modelPreparation = nil
+                return
             }
+            // Quietly get the recording model ready too, so the first recording doesn't wait for it.
+            try? await engineWhileRecording().prepare(onProgress: { _ in })
         }
+    }
+
+    /// The engine a recording is transcribed with while it runs: one that keeps up with the call.
+    /// With Best chosen, that's Balanced; the recording is redone at Best right after.
+    func engineWhileRecording() -> any SpeechEngine {
+        let quality = settings.quality.whileRecording
+        guard quality != settings.quality else { return engine }
+        if let recordingEngine { return recordingEngine }
+        let made = Self.makeEngine(settings: settings, quality: quality, european: european)
+        recordingEngine = made
+        return made
     }
 
     /// Transcribes pending items one at a time, oldest first.
@@ -158,11 +173,15 @@ extension AppModel {
         let language = TranscriptionEngine.dominantLanguage(
             weights: results.values.map(\.languageWeights).reduce([:], TranscriptionEngine.merge)
         )
+        // Stopped meanwhile (e.g. the user started fixing this version by hand): keep what's there.
+        try Task.checkCancellation()
         update(id, persist: true) {
             $0.segments = segments
             $0.language = language ?? $0.language // final, text-weighted choice replaces live guesses
             $0.status = .done
             $0.quality = quality
+            // A recording done quickly owes a pass at the chosen quality; a better pass settles it.
+            $0.upgradeQuality = TranscriptionQuality.upgrade(to: isLive ? settings.quality : $0.upgradeQuality, after: quality)
             if $0.title.hasPrefix(TitleGenerator.recordingPrefix), let suggestion = TitleGenerator.suggestedTitle(from: segments) {
                 $0.title = suggestion
             }

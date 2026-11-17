@@ -17,6 +17,8 @@ extension AppModel {
         startFailure = nil
         selection = nil
         levels = Array(repeating: 0, count: Self.levelHistory)
+        // Live text needs the Mac to keep up: a background pass waits until the recording ends.
+        if enhancingID != nil { startEnhancing() }
         let source = recordingSource
         let transcript = Transcript(title: title ?? TitleGenerator.recordingTitle(), tracks: [])
         let recorder = RecordingSession(source: source, directory: store.directory(for: transcript))
@@ -127,7 +129,9 @@ extension AppModel {
         let pairs = zip(transcript.tracks, sources).map { ($0, $1 as AudioSource) }
         let task = Task { [weak self] in
             guard let self else { return }
-            try await self.runPipeline(for: transcript, sources: pairs, isLive: true)
+            // A model that keeps up with the call, so Stop shows the transcript in seconds.
+            try await self.runPipeline(for: transcript, sources: pairs, isLive: true,
+                                       engine: self.engineWhileRecording(), quality: self.settings.quality.whileRecording)
         }
         live = (task, sources)
         activity[transcript.id] = .live

@@ -127,6 +127,8 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var recordingEndedAt: Date?
     /// The quality setting the current text was produced with (nil = before qualities existed).
     public var quality: TranscriptionQuality?
+    /// Transcribed quickly while recording; redone at this quality in the background (nil = nothing owed).
+    public var upgradeQuality: TranscriptionQuality?
     /// Speakers linked to people the user knows.
     public var speakerPeople: [Int: UUID] = [:]
     /// Recordings that continue the same conversation share a thread.
@@ -160,7 +162,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, title, createdAt, duration, language, tracks, segments, status, speakerNames, meSpeaker, summary, chat, quality, speakerPeople, threadID
-        case speakerVoiceprints, actionItems, recordingEndedAt
+        case speakerVoiceprints, actionItems, recordingEndedAt, upgradeQuality
     }
 
     public init(from decoder: Decoder) throws {
@@ -179,6 +181,7 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
         chat = try container.decodeIfPresent(AIChat.self, forKey: .chat)
         recordingEndedAt = try container.decodeIfPresent(Date.self, forKey: .recordingEndedAt)
         quality = try container.decodeIfPresent(TranscriptionQuality.self, forKey: .quality)
+        upgradeQuality = try container.decodeIfPresent(TranscriptionQuality.self, forKey: .upgradeQuality)
         speakerPeople = try container.decodeIfPresent([Int: UUID].self, forKey: .speakerPeople) ?? [:]
         threadID = try container.decodeIfPresent(UUID.self, forKey: .threadID)
         speakerVoiceprints = try container.decodeIfPresent([Int: [Float]].self, forKey: .speakerVoiceprints) ?? [:]
