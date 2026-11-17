@@ -153,6 +153,8 @@ extension AppModel {
             return results
         }
 
+        // Every word is in; who said what (and the echo check) can take a while on a long call.
+        if showsProgress, !(isLive && liveRecordingID == id) { activity[id] = .identifyingSpeakers }
         guard let current = self.transcript(id) else { return }
         let offsets = sources.map { pair in current.tracks.first { $0.fileName == pair.0.fileName }?.offset ?? pair.0.offset }
         let withCall = sources.contains { $0.0.source == .system }
@@ -195,6 +197,9 @@ extension AppModel {
         Task(priority: .utility) { await learnVoices(of: id, recognize: showsProgress) }
     }
 
+    /// The most the progress shows before the transcript is finished.
+    static let mostShownWhileWorking = 0.99
+
     private func pipelineDidUpdate(id: Transcript.ID, track: AudioTrack, index: Int, update progressUpdate: LiveTrackProgress,
                                    progress: PipelineProgress, isLive: Bool) {
         guard let transcript = self.transcript(id) else { return }
@@ -225,11 +230,14 @@ extension AppModel {
                 committed: TrackMerger.merge([TrackMerger.Track(source: track.source, offset: track.offset, segments: committed)]),
                 startedAt: progress.startedAt, committedAt: Date())
         }
+        // 100% only once it's really done: the last window can still be decoding, and speakers
+        // are worked out after that.
+        let shown = min(progress.overall, Self.mostShownWhileWorking)
         if let reason = progressUpdate.pausedReason {
-            activity[id] = .paused(reason)
+            activity[id] = .paused(reason, progress: isLive && liveRecordingID == id ? nil : shown)
         } else {
             // After Stop, the rest of a live transcription is ordinary progress with time left.
-            activity[id] = isLive && liveRecordingID == id ? .live : .transcribing(progress.overall)
+            activity[id] = isLive && liveRecordingID == id ? .live : .transcribing(shown)
         }
         if progressUpdate.pending.isEmpty, transcript.status == .transcribing {
             try? store.saveCheckpoint(

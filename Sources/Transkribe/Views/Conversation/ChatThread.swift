@@ -228,12 +228,13 @@ private struct ThreadStatus: View {
             case (_, .transcribing(let progress)?):
                 WorkingCard(title: "Transcribing", subtitle: timeLeft(progress), progress: progress)
                     .padding(.bottom, 20)
-            case (_, .paused(let reason)?):
-                WorkingCard(title: "Paused for now", subtitle: "\(reason). Picks up right where it left off.", progress: nil,
+            case (_, .paused(let reason, let progress)?):
+                WorkingCard(title: "Paused for now", subtitle: "\(reason). Picks up right where it left off.", progress: progress,
+                            isPaused: true,
                             action: reason.contains("hot") ? nil : ("Continue Anyway", { ResourceGovernor.continuesAnyway = true }))
                     .padding(.bottom, 20)
             case (_, .identifyingSpeakers?):
-                WorkingCard(title: "Identifying speakers", subtitle: "Working out who said what", progress: nil)
+                WorkingCard(title: "Almost done", subtitle: "Working out who said what", progress: nil)
                     .padding(.bottom, 20)
             case (.failed(let message), _):
                 HStack(spacing: 12) {

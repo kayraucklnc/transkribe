@@ -17,8 +17,8 @@ final class AppModel {
         case transcribing(Double)
         /// Transcribing a recording that is still running.
         case live
-        /// Waiting for the Mac to have resources to spare; resumes on its own.
-        case paused(String)
+        /// Waiting for the Mac to have resources to spare; resumes on its own. Keeps how far it got.
+        case paused(String, progress: Double?)
         case identifyingSpeakers
     }
 

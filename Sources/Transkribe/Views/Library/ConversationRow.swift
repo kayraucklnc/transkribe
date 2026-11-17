@@ -167,7 +167,7 @@ struct StatusBadge: View {
             ProgressRing(progress: progress)
         case .identifyingSpeakers?:
             ProgressView().controlSize(.mini)
-        case .paused(let reason)?:
+        case .paused(let reason, _)?:
             Image(systemName: "pause.circle.fill")
                 .foregroundStyle(.secondary)
                 .help("Paused: \(reason). Resumes automatically.")

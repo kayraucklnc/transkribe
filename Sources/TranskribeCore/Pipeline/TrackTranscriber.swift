@@ -41,6 +41,8 @@ public final class TrackTranscriber: @unchecked Sendable {
     private let diarizationPiece: TimeInterval
     /// Returns a reason to hold off before the next window, or nil to continue.
     private let shouldPause: @Sendable () -> String?
+    /// Seconds between progress reports while paused (the pause itself is checked every second).
+    private let pauseRecheck = 10
 
     public init(
         source: AudioSource,
@@ -90,7 +92,16 @@ public final class TrackTranscriber: @unchecked Sendable {
                 await onProgress(Progress(committed: committed, pending: [], committedUntil: committedUntil,
                                           availableDuration: available, turns: diarization?.turns() ?? [],
                                           language: nil, pausedReason: reason))
-                try await Task.sleep(for: .seconds(10))
+                // Checked every second, so "Continue Anyway" (or the Mac cooling down) resumes at once.
+                for _ in 0..<pauseRecheck where shouldPause() != nil {
+                    try await Task.sleep(for: .seconds(1))
+                }
+                if shouldPause() == nil {
+                    // Say so right away: the next text can be a while.
+                    await onProgress(Progress(committed: committed, pending: [], committedUntil: committedUntil,
+                                              availableDuration: available, turns: diarization?.turns() ?? [],
+                                              language: nil))
+                }
                 continue
             }
 
