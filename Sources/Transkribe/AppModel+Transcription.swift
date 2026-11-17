@@ -157,21 +157,9 @@ extension AppModel {
         if showsProgress, !(isLive && liveRecordingID == id) { activity[id] = .identifyingSpeakers }
         guard let current = self.transcript(id) else { return }
         let offsets = sources.map { pair in current.tracks.first { $0.fileName == pair.0.fileName }?.offset ?? pair.0.offset }
-        let withCall = sources.contains { $0.0.source == .system }
-        let callSpeech = Self.callSpeech(sources: sources.map(\.0), offsets: offsets, segments: sources.indices.map { results[$0]!.segments })
-        var labeled = sources.indices.map {
-            Self.label(results[$0]!.segments, track: sources[$0].0, turns: results[$0]!.turns, withCall: withCall, callSpeech: callSpeech)
-        }
-        if let mic = sources.firstIndex(where: { $0.0.source == .microphone }),
-           let system = sources.firstIndex(where: { $0.0.source == .system }) {
-            labeled[mic] = await removeSpeakerBleed(mic: labeled[mic], micSource: sources[mic].1, micOffset: offsets[mic],
-                                                   system: labeled[system], systemSource: sources[system].1, systemOffset: offsets[system])
-        }
-        let tracks = sources.indices.map { index in
-            TrackMerger.Track(source: sources[index].0.source, offset: offsets[index], segments: labeled[index])
-        }
-        // Overlapping turns are split where the other person cut in, so the thread reads in order.
-        let segments = Interleaver.interleave(TrackMerger.merge(tracks))
+        let ordered = sources.indices.map { results[$0]! }
+        // Off the main thread: the echo check reads audio for each line, and a long call has many.
+        let segments = await Self.finalSegments(ordered, sources: sources, offsets: offsets)
         let language = TranscriptionEngine.dominantLanguage(
             weights: results.values.map(\.languageWeights).reduce([:], TranscriptionEngine.merge)
         )
@@ -248,9 +236,29 @@ extension AppModel {
         }
     }
 
+    /// Speakers, echo removal, and one thread in order, from each track's transcription.
+    nonisolated static func finalSegments(_ results: [TrackTranscriber.Result], sources: [(AudioTrack, AudioSource)],
+                                          offsets: [TimeInterval]) async -> [Segment] {
+        let withCall = sources.contains { $0.0.source == .system }
+        let callSpeech = Self.callSpeech(sources: sources.map(\.0), offsets: offsets, segments: sources.indices.map { results[$0].segments })
+        var labeled = sources.indices.map {
+            Self.label(results[$0].segments, track: sources[$0].0, turns: results[$0].turns, withCall: withCall, callSpeech: callSpeech)
+        }
+        if let mic = sources.firstIndex(where: { $0.0.source == .microphone }),
+           let system = sources.firstIndex(where: { $0.0.source == .system }) {
+            labeled[mic] = await removeSpeakerBleed(mic: labeled[mic], micSource: sources[mic].1, micOffset: offsets[mic],
+                                                   system: labeled[system], systemSource: sources[system].1, systemOffset: offsets[system])
+        }
+        let tracks = sources.indices.map { index in
+            TrackMerger.Track(source: sources[index].0.source, offset: offsets[index], segments: labeled[index])
+        }
+        // Overlapping turns are split where the other person cut in, so the thread reads in order.
+        return Interleaver.interleave(TrackMerger.merge(tracks))
+    }
+
     /// Drops microphone lines that are only the call coming out of the speakers: their loudness
     /// follows the system channel. Lines where you really spoke over the call are kept.
-    private func removeSpeakerBleed(mic: [RawSegment], micSource: AudioSource, micOffset: TimeInterval,
+    nonisolated private static func removeSpeakerBleed(mic: [RawSegment], micSource: AudioSource, micOffset: TimeInterval,
                                     system: [RawSegment], systemSource: AudioSource, systemOffset: TimeInterval) async -> [RawSegment] {
         var kept: [RawSegment] = []
         for segment in mic {
@@ -269,7 +277,7 @@ extension AppModel {
 
     /// On the microphone, the main voice is "Me" and anyone else in the room keeps their own
     /// label; the call side and imported files use speaker detection as is.
-    static func label(_ segments: [RawSegment], track: AudioTrack, turns: [SpeakerTurn], withCall: Bool,
+    nonisolated static func label(_ segments: [RawSegment], track: AudioTrack, turns: [SpeakerTurn], withCall: Bool,
                       callSpeech: [(start: TimeInterval, end: TimeInterval)] = []) -> [RawSegment] {
         guard track.source == .microphone else { return SpeakerAssigner.assign(segments, turns: turns) }
         return withCall ? MicSpeakers.labelWithCall(segments, turns: turns, callSpeech: callSpeech)
@@ -277,7 +285,7 @@ extension AppModel {
     }
 
     /// When the call side was talking, on the microphone track's clock.
-    static func callSpeech(sources: [AudioTrack], offsets: [TimeInterval], segments: [[RawSegment]]) -> [(start: TimeInterval, end: TimeInterval)] {
+    nonisolated static func callSpeech(sources: [AudioTrack], offsets: [TimeInterval], segments: [[RawSegment]]) -> [(start: TimeInterval, end: TimeInterval)] {
         guard let mic = sources.firstIndex(where: { $0.source == .microphone }),
               let system = sources.firstIndex(where: { $0.source == .system }) else { return [] }
         let shift = offsets[system] - offsets[mic]
@@ -285,15 +293,24 @@ extension AppModel {
     }
 
     private func relabelSpeakers(in transcript: Transcript, speakerCount: Int?) async throws -> [Segment] {
+        let tracks = transcript.tracks.map { ($0, store.audioURL(for: transcript, track: $0)) }
+        return try await Self.relabeled(transcript.segments, tracks: tracks, diarizer: diarizer, speakerCount: speakerCount)
+    }
+
+    /// Off the main thread: the speaker model runs over the whole recording, seconds per 5-minute
+    /// piece, and the app froze while it did.
+    nonisolated static func relabeled(_ segments: [Segment], tracks: [(AudioTrack, URL)], diarizer: DiarizationEngine,
+                                      speakerCount: Int?) async throws -> [Segment] {
         var turns: [SpeakerTurn] = []
-        let withCall = transcript.tracks.contains { $0.source == .system }
+        let withCall = tracks.contains { $0.0.source == .system }
         // With a call, the count applies to the call side; the mic's voices stay as they are.
         // A mic-only recording is an in-person conversation: its voices are what's being counted.
-        for track in transcript.tracks where !(withCall && track.source == .microphone) {
-            let source = FileAudioSource(url: store.audioURL(for: transcript, track: track))
+        for (track, url) in tracks where !(withCall && track.source == .microphone) {
+            let source = FileAudioSource(url: url)
             let stream = try await diarizer.makeStream()
             let duration = try await source.availableDuration()
             for start in stride(from: 0.0, to: duration, by: 300) {
+                try Task.checkCancellation()
                 try stream.append(try await source.read(from: start, to: min(duration, start + 300)))
             }
             try stream.finish()
@@ -301,10 +318,10 @@ extension AppModel {
                 SpeakerTurn(start: $0.start + track.offset, end: $0.end + track.offset, speaker: $0.speaker)
             }
         }
-        guard !turns.isEmpty else { return transcript.segments }
-        let mine = withCall ? transcript.segments.filter { SpeakerID.isOnMicrophone($0.speaker) } : []
-        let others = transcript.segments
-            .filter { !mine.contains($0) }
+        guard !turns.isEmpty else { return segments }
+        let mine = withCall ? segments.filter { SpeakerID.isOnMicrophone($0.speaker) } : []
+        let others = segments
+            .filter { !(withCall && SpeakerID.isOnMicrophone($0.speaker)) }
             .map { RawSegment(start: $0.start, end: $0.end, text: $0.text, words: $0.words) }
         let relabeled = SpeakerAssigner.assign(others, turns: turns).map {
             Segment(start: $0.start, end: $0.end, text: $0.text, speaker: $0.speaker, words: $0.words)
