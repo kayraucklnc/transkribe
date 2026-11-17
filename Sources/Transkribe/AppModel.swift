@@ -86,6 +86,9 @@ final class AppModel {
     weak var intentAI: AIService?
     var liveIntents: LiveIntentController?
     var enhanceTask: Task<Void, Never>?
+    var compactTask: Task<Void, Never>?
+    /// Conversations whose audio was already looked at this session.
+    @ObservationIgnored var compactionChecked: Set<Transcript.ID> = []
     var people: [Person] = []
     let peopleStore = PeopleStore()
     /// The person whose page is open (when no conversation is).
@@ -133,6 +136,7 @@ final class AppModel {
             preloadModel()
         }
         startEnhancing()
+        startCompacting()
         backfillVoices()
         // Models no longer used (e.g. large-v3, which dropped speech) only take up space.
         Task.detached(priority: .background) { ModelFiles.removeRetired() }
