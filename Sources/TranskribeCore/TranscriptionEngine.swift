@@ -123,9 +123,18 @@ public actor TranscriptionEngine {
     ) async throws -> Output {
         // The actor can interleave at `await`s; WhisperKit must only run one job at a time
         // (a live recording and the import queue may both be transcribing).
+        try await transcribe(samples: samples, language: nil, onSegments: onSegments)
+    }
+
+    /// Transcribes in `language` when it's one of the user's languages, without detecting it again.
+    public func transcribe(
+        samples: [Float],
+        language: String?,
+        onSegments: @escaping @Sendable ([RawSegment]) -> Void = { _ in }
+    ) async throws -> Output {
         await acquire()
         defer { release() }
-        return try await runTranscription(samples: samples, onSegments: onSegments)
+        return try await runTranscription(samples: samples, language: language, onSegments: onSegments)
     }
 
     private func acquire() async {
@@ -146,6 +155,7 @@ public actor TranscriptionEngine {
 
     private func runTranscription(
         samples: [Float],
+        language known: String?,
         onSegments: @escaping @Sendable ([RawSegment]) -> Void
     ) async throws -> Output {
         let whisper = try await model().whisper
@@ -157,7 +167,12 @@ public actor TranscriptionEngine {
         }
         defer { whisper.segmentDiscoveryCallback = nil }
 
-        let language = await chooseLanguage(whisper, samples: samples)
+        let language: String?
+        if let known, languages.isEmpty || languages.contains(known) {
+            language = known
+        } else {
+            language = await chooseLanguage(whisper, samples: samples)
+        }
 
         if let european, let language, EngineCatalog.usesEuropeanModel(for: language),
            let segments = try? await european.transcribe(samples: samples) {

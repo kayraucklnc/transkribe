@@ -205,6 +205,15 @@ public struct Transcript: Codable, Equatable, Hashable, Identifiable, Sendable {
         return Set(speakers.filter { !SpeakerID.isOnMicrophone($0) }).union([SpeakerID.me])
     }
 
+    /// Whether a redo at a better quality may replace `old`. A pass that comes back with clearly less
+    /// text dropped speech (Whisper large-v3 skipped whole stretches of a Turkish call), so the
+    /// existing text is kept; removing a few repeated or made-up words stays within the margin.
+    public static func isUpgrade(_ new: [Segment], over old: [Segment]) -> Bool {
+        let before = old.reduce(0) { $0 + $1.text.count }
+        let after = new.reduce(0) { $0 + $1.text.count }
+        return before == 0 || Double(after) >= Double(before) * 0.9
+    }
+
     /// Speakers in order of first appearance.
     public var speakers: [Int] {
         var seen = Set<Int>()

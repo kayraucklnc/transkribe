@@ -119,7 +119,7 @@ extension AppModel {
     /// finishes with speaker labels and a merged transcript.
     func runPipeline(for transcript: Transcript, sources: [(AudioTrack, AudioSource)], isLive: Bool,
                      engine overrideEngine: (any SpeechEngine)? = nil, quality overrideQuality: TranscriptionQuality? = nil,
-                     showsProgress: Bool = true) async throws {
+                     showsProgress: Bool = true, replacesOnlyIfComplete: Bool = false) async throws {
         let engine = overrideEngine ?? self.engine
         let quality = overrideQuality ?? settings.quality
         let id = transcript.id
@@ -175,6 +175,9 @@ extension AppModel {
         )
         // Stopped meanwhile (e.g. the user started fixing this version by hand): keep what's there.
         try Task.checkCancellation()
+        if replacesOnlyIfComplete, let existing = self.transcript(id), !Transcript.isUpgrade(segments, over: existing.segments) {
+            throw PipelineError.lostText
+        }
         update(id, persist: true) {
             $0.segments = segments
             $0.language = language ?? $0.language // final, text-weighted choice replaces live guesses
@@ -322,4 +325,9 @@ final class PipelineProgress {
     var overall: Double {
         fraction.isEmpty ? 0 : fraction.reduce(0, +) / Double(fraction.count)
     }
+}
+
+enum PipelineError: Error {
+    /// A redo came back with clearly less text than what's there; the existing text is kept.
+    case lostText
 }

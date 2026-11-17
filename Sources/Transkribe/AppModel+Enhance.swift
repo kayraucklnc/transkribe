@@ -56,9 +56,13 @@ extension AppModel {
             let sources = transcript.tracks.map { track in
                 (track, FileAudioSource(url: store.audioURL(for: transcript, track: track)) as AudioSource)
             }
-            try await runPipeline(for: transcript, sources: sources, isLive: false, engine: engine, quality: quality, showsProgress: false)
+            try await runPipeline(for: transcript, sources: sources, isLive: false, engine: engine, quality: quality,
+                                  showsProgress: false, replacesOnlyIfComplete: true)
         } catch is CancellationError {
             // A recording started: it comes back to this afterwards.
+        } catch PipelineError.lostText {
+            // The better model dropped speech here: this version stays, and isn't redone again.
+            update(id, persist: true) { $0.upgradeQuality = nil; $0.quality = quality }
         } catch {
             // Leave the existing transcript as it is.
             failedUpgrades.insert(id)
