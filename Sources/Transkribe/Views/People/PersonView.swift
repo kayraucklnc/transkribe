@@ -136,10 +136,6 @@ struct PeopleStrip: View {
     var body: some View {
         let people = model.people.sorted { model.conversations(with: $0.id).first?.createdAt ?? .distantPast > model.conversations(with: $1.id).first?.createdAt ?? .distantPast }
         VStack(alignment: .leading, spacing: 14) {
-            Text("People")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.leading, 4)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 18) {
                     ForEach(people) { person in

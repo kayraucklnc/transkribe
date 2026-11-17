@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import TranskribeCore
 
-/// Home's palette: a deep, near-black stage in dark mode, warm paper in light mode.
+/// Home's palette: flat near-black ink in dark mode, warm paper in light mode.
 enum Stage {
     static let canvas = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -14,67 +14,28 @@ enum Stage {
             ? NSColor(white: 1, alpha: 0.055)
             : NSColor(white: 1, alpha: 1)
     })
+    /// A card under the pointer: one step lighter in dark mode, a touch warmer in light mode.
+    static let cardRaised = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 1, alpha: 0.085)
+            : NSColor(red: 0.995, green: 0.993, blue: 0.99, alpha: 1)
+    })
     static let hairline = Color.primary.opacity(0.09)
 }
 
-/// Fine sound lines behind the buttons. Still at rest; while recording they follow your voice,
-/// redrawn only when the level changes — nothing runs when nothing happens.
-struct SoundField: View {
-    var level: Double
-    var isRecording: Bool
-
-    var body: some View {
-        Canvas { canvas, size in
-            let mid = size.height / 2
-            for line in 0..<6 {
-                let index = Double(line)
-                let swell = isRecording ? 10 + level * 110 : 16
-                let amplitude = swell * (1 - index * 0.12)
-                let frequency = 2.2 + index * 0.35
-                var path = Path()
-                let steps = 90
-                for step in 0...steps {
-                    let x = Double(step) / Double(steps)
-                    // Pinned at the edges, free in the middle (behind the record button).
-                    let envelope = pow(sin(.pi * x), 2.4)
-                    let y = mid + amplitude * envelope * sin(x * .pi * frequency + index * 1.3)
-                    let point = CGPoint(x: x * size.width, y: y)
-                    step == 0 ? path.move(to: point) : path.addLine(to: point)
-                }
-                let tint: Color = line == 0 ? Theme.record : .primary
-                canvas.stroke(path, with: .color(tint.opacity(line == 0 ? 0.6 : 0.14 - index * 0.015)),
-                              lineWidth: line == 0 ? 1.6 : 1)
-            }
-        }
-        .animation(.easeOut(duration: 0.12), value: level)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
-/// Home's backdrop: deep ink with one warm light rising behind the record button.
+/// Home's backdrop: one flat surface, nothing behind the controls competing with them.
 struct StageBackdrop: View {
-    @Environment(\.colorScheme) private var scheme
-
     var body: some View {
-        let dark = scheme == .dark
-        ZStack {
-            Stage.canvas
-            RadialGradient(colors: dark
-                           ? [Color(red: 0.42, green: 0.06, blue: 0.11).opacity(0.85), Color(red: 0.16, green: 0.04, blue: 0.10).opacity(0.5), .clear]
-                           : [Color(red: 1.0, green: 0.80, blue: 0.76).opacity(0.75), Color(red: 1.0, green: 0.91, blue: 0.86).opacity(0.4), .clear],
-                           center: UnitPoint(x: 0.5, y: 0.28), startRadius: 10, endRadius: 620)
-            LinearGradient(colors: [.clear, Stage.canvas.opacity(0.9)], startPoint: UnitPoint(x: 0.5, y: 0.45), endPoint: .bottom)
-        }
-        .ignoresSafeArea()
+        Stage.canvas.ignoresSafeArea()
     }
 }
 
-/// The record button: a red disc in a ring, with a slow heartbeat so the eye finds it first.
+/// The record button: a red disc in a ring, like a camera shutter. Crisp edges, no glow;
+/// while recording a thin ring around it moves with your voice.
 struct ShutterButton: View {
     @Environment(AppModel.self) private var model
     @State private var isHovered = false
-    static let diameter: CGFloat = 116
+    static let diameter: CGFloat = 104
     var size: CGFloat = ShutterButton.diameter
 
     var body: some View {
@@ -84,12 +45,11 @@ struct ShutterButton: View {
             ZStack {
                 Heartbeat(size: size, isRecording: recording, level: level, isHovered: isHovered)
                 Circle()
-                    .strokeBorder(Color.primary.opacity(isHovered ? 0.55 : 0.32), lineWidth: 3.5)
-                RoundedRectangle(cornerRadius: recording ? size * 0.09 : size * 0.4, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(isHovered ? 0.42 : 0.24), lineWidth: 3)
+                RoundedRectangle(cornerRadius: recording ? size * 0.07 : size * 0.4, style: .continuous)
                     .fill(Theme.record)
-                    .frame(width: recording ? size * 0.36 : size * 0.8, height: recording ? size * 0.36 : size * 0.8)
-                    .scaleEffect(isHovered && !recording ? 0.95 : 1)
-                    .shadow(color: Theme.record.opacity(0.45), radius: recording ? 8 + level * 20 : 14, y: 2)
+                    .frame(width: recording ? size * 0.34 : size * 0.8, height: recording ? size * 0.34 : size * 0.8)
+                    .scaleEffect(isHovered && !recording ? 0.96 : 1)
                 if model.recordingState == .starting {
                     ProgressView().controlSize(.small).tint(.white)
                 }
@@ -112,8 +72,8 @@ struct ShutterButton: View {
     }
 }
 
-/// A soft halo around the record button: one pulse when you point at it, and while recording
-/// it breathes with your voice. Nothing animates on its own.
+/// One clean ring that ripples out when you point at the record button; while recording
+/// it sits just outside the button and swells with your voice. Nothing animates on its own.
 private struct Heartbeat: View {
     let size: CGFloat
     let isRecording: Bool
@@ -124,13 +84,12 @@ private struct Heartbeat: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(Theme.record.opacity(isRecording ? 0.14 + Double(level) * 0.3 : 0.1))
-                .scaleEffect(isRecording ? 1.12 + level * 0.45 : 1.12)
-                .blur(radius: 18)
-                .animation(.easeOut(duration: 0.15), value: level)
+                .stroke(Theme.record.opacity(isRecording ? 0.35 + Double(level) * 0.45 : 0), lineWidth: 1.5)
+                .scaleEffect(isRecording ? 1.1 + level * 0.18 : 1)
+                .animation(.easeOut(duration: 0.12), value: level)
             Circle()
-                .stroke(Theme.record.opacity(pulse ? 0 : 0.6), lineWidth: 1.5)
-                .scaleEffect(pulse ? 1.45 : 1)
+                .stroke(Theme.record.opacity(pulse ? 0 : 0.5), lineWidth: 1)
+                .scaleEffect(pulse ? 1.35 : 1)
         }
         .frame(width: size, height: size)
         .allowsHitTesting(false)
@@ -143,7 +102,7 @@ private struct Heartbeat: View {
     }
 }
 
-/// A round secondary action beside the record button, camera-app style.
+/// A quiet round action beside the record button, camera-app style.
 struct SideButton: View {
     let symbol: String
     let title: String
@@ -153,32 +112,32 @@ struct SideButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 12) {
+            VStack(spacing: 10) {
                 Image(systemName: symbol)
-                    .font(.system(size: 21, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .frame(width: 64, height: 64)
-                    .background(Circle().fill(Color.primary.opacity(isHovered ? 0.14 : 0.075)))
-                    .overlay(Circle().strokeBorder(Color.primary.opacity(isHovered ? 0.25 : 0.1), lineWidth: 1))
-                    .scaleEffect(isHovered ? 1.06 : 1)
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(isHovered ? Color.primary : Color.secondary)
+                    .frame(width: 52, height: 52)
+                    .background(Circle().fill(Color.primary.opacity(isHovered ? 0.08 : 0.035)))
+                    .overlay(Circle().strokeBorder(Color.primary.opacity(isHovered ? 0.2 : 0.1), lineWidth: 1))
                     .frame(height: ShutterButton.diameter)
                 VStack(spacing: 5) {
                     Text(title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(isHovered ? Color.primary : Color.secondary)
                     if let keys { Keycap(text: keys) } else { Keycap(text: "⌘O").hidden() }
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(SquishStyle())
-        .onHover { hovering in withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) { isHovered = hovering } }
+        .onHover { hovering in withAnimation(.easeOut(duration: 0.15)) { isHovered = hovering } }
     }
 }
 
 struct SquishStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(.spring(response: 0.22, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
