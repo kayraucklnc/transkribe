@@ -44,28 +44,29 @@ struct LibraryView: View {
                 } else {
                     Hero()
                         .frame(maxWidth: .infinity)
-                        .padding(.top, 8)
+                        .padding(.top, 6)
                     if !model.transcripts.isEmpty {
                         AskBar(isPresented: $isAsking)
-                            .frame(maxWidth: 620)
+                            .frame(maxWidth: 560)
                             .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
+                            .padding(.top, 34)
                         SectionTitle("Recent")
-                            .padding(.top, 54)
-                        RecentCards(transcripts: Array(model.transcripts.prefix(8)))
+                            .padding(.top, 44)
+                        RecentCards(transcripts: Array(model.transcripts.prefix(6)))
+                            .padding(.top, 14)
                     } else {
                         EmptyLibrary()
                             .padding(.top, 50)
                     }
                     if !model.people.isEmpty {
                         SectionTitle("People")
-                            .padding(.top, 34)
+                            .padding(.top, 44)
                         PeopleStrip()
                             .padding(.top, 14)
                     }
                     if model.transcripts.count > 1 {
                         SectionTitle("All Conversations")
-                            .padding(.top, 40)
+                            .padding(.top, 44)
                         VStack(alignment: .leading, spacing: 22) {
                             ForEach(DateSection.group(model.transcripts), id: \.title) { section in
                                 ConversationGroup(title: section.title, transcripts: section.transcripts)
@@ -154,8 +155,8 @@ private struct SectionTitle: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 22, weight: .bold))
-            .tracking(-0.4)
+            .font(.system(size: 20, weight: .bold))
+            .tracking(-0.3)
     }
 }
 
