@@ -283,9 +283,7 @@ private final class HUDPanel {
     var frame: CGRect { panel.frame }
 
     func setContent<Content: View>(_ view: Content) {
-        let host = NSHostingView(rootView: view)
-        host.sizingOptions = []
-        panel.contentView = host
+        panel.setSwiftUIContent(view)
     }
 
     func show(frame: CGRect) {

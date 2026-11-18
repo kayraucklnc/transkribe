@@ -38,9 +38,7 @@ final class DictationPanelHost {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isMovable = false
-        let host = NSHostingView(rootView: DictationPill(controller: controller))
-        host.sizingOptions = []
-        panel.contentView = host
+        panel.setSwiftUIContent(DictationPill(controller: controller))
         return panel
     }
 }
