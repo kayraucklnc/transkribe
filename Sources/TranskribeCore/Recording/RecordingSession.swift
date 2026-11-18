@@ -33,9 +33,12 @@ public enum RecordingError: LocalizedError, Equatable {
     case systemAudioPermissionDenied
     case noMicrophone
     case nothingRecorded
+    case unsupportedSampleRate(Double)
 
     public var errorDescription: String? {
         switch self {
+        case let .unsupportedSampleRate(rate):
+            "Transkribe can't record from this input at \(Int(rate)) Hz. Choose another microphone, or change its format in Audio MIDI Setup."
         case .microphonePermissionDenied:
             "Transkribe needs microphone access. Allow it in System Settings → Privacy & Security → Microphone."
         case .systemAudioPermissionDenied:
