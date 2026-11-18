@@ -26,6 +26,29 @@ public actor VoiceprintEngine {
         return learned
     }
 
+    /// The speaker model's `turns` regrouped by how the voices sound, so every person gets their
+    /// own number however many there are (see `VoiceSeparator`). `read` gives the track's 16 kHz
+    /// mono audio between two times.
+    public func separateVoices(turns: [SpeakerTurn], speakerCount: Int? = nil,
+                               threshold: Float = VoiceSeparator.defaultThreshold,
+                               smoothing: VoiceSeparator.Smoothing = .standard,
+                               read: @Sendable (TimeInterval, TimeInterval) async throws -> [Float]) async throws -> [SpeakerTurn] {
+        guard !turns.isEmpty else { return turns }
+        let manager = try await loaded()
+        let windows = VoiceSeparator.windows(for: turns)
+        var voiceprints: [[Float]?] = []
+        voiceprints.reserveCapacity(windows.count)
+        for window in windows {
+            try Task.checkCancellation()
+            guard window.wantsVoiceprint else { voiceprints.append(nil); continue }
+            let samples = try await read(window.start, window.end)
+            let embedding = samples.isEmpty ? nil : try manager.extractSpeakerEmbedding(from: samples)
+            voiceprints.append(embedding.flatMap { manager.validateEmbedding($0) ? $0 : nil })
+        }
+        return VoiceSeparator.separate(turns: turns, windows: windows, voiceprints: voiceprints,
+                                       speakerCount: speakerCount, threshold: threshold, smoothing: smoothing)
+    }
+
     private func loaded() async throws -> DiarizerManager {
         if let manager { return manager }
         let directory = modelsDirectory.appendingPathComponent("FluidAudio", isDirectory: true)
