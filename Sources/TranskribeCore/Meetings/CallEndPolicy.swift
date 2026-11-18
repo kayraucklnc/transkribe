@@ -29,4 +29,15 @@ public enum CallEndPolicy {
     public static func stopsWhileWaiting(now: Date, until end: Date, meetingOpen: Bool?) -> Bool {
         meetingOpen == false || now >= end
     }
+
+    /// How long before a call picks up the mic a recording you started yourself still counts as
+    /// that call's: pressing Record, then joining through a lobby.
+    public static let joinLead: TimeInterval = 2 * 60
+
+    /// Whether a recording you started yourself is for the call, so the call's end stops it too.
+    /// One started during the call, or just before joining, is; a longer one a call interrupts
+    /// (an in-person meeting) isn't.
+    public static func belongsToCall(recordingStartedAt start: Date, callStartedAt callStart: Date) -> Bool {
+        start >= callStart - joinLead
+    }
 }

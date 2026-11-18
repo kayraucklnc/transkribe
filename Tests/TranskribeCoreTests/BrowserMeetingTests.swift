@@ -114,4 +114,16 @@ import Testing
         #expect(!CallEndPolicy.stopsWhileWaiting(now: end - 1200, until: end, meetingOpen: nil))
         #expect(CallEndPolicy.stopsWhileWaiting(now: end, until: end, meetingOpen: true))
     }
+
+    @Test func aRecordingStartedByHandDuringTheCallStopsWithIt() {
+        #expect(CallEndPolicy.belongsToCall(recordingStartedAt: end + 173, callStartedAt: end))
+    }
+
+    @Test func aRecordingStartedJustBeforeJoiningStopsWithTheCall() {
+        #expect(CallEndPolicy.belongsToCall(recordingStartedAt: end - 90, callStartedAt: end))
+    }
+
+    @Test func aLongerRecordingACallInterruptsKeepsGoing() {
+        #expect(!CallEndPolicy.belongsToCall(recordingStartedAt: end - 600, callStartedAt: end))
+    }
 }
