@@ -49,6 +49,8 @@ final class CallMonitor {
     /// The process that held the mic for the current call, kept after the mic goes quiet so a
     /// recording waiting for the planned end can still see the meeting tab close.
     private var callBrowserID: String?
+    /// When the current call picked up the mic, to tell whether a recording you started is for it.
+    private var callStartedAt: Date?
 
     init(model: AppModel) {
         self.model = model
@@ -80,8 +82,10 @@ final class CallMonitor {
         if recordingForCall, !model.isRecording, model.recordingState == .idle {
             finishCall() // stopped by hand
         }
+        adoptRecordingStartedByHand()
         switch watch.update(micApps: MicUsage.bundleIDs(), meetingOpen: meetingOpen) {
         case .started(let app)?:
+            callStartedAt = Date()
             callBrowserID = watch.activeBundleID
             if keepsRecordingUntil != nil {
                 keepsRecordingUntil = nil // the call came back; carry on
@@ -99,6 +103,7 @@ final class CallMonitor {
                 show(prompt: tab?.service.rawValue ?? app)
             }
         case .ended?:
+            callStartedAt = nil
             dismiss()
             guard recordingForCall, model.isRecording, stopsWithCall || recordedMeeting != nil else {
                 finishCall()
@@ -118,6 +123,17 @@ final class CallMonitor {
                 restart()
             }
         }
+    }
+
+    /// A recording you started yourself during the call (or just before joining it) is the call's
+    /// too: with "Stop recording when the call ends" on, the call's end stops it.
+    private func adoptRecordingStartedByHand() {
+        guard stopsWithCall, !recordingForCall, watch.isInCall, let callStartedAt,
+              case .recording(let since) = model.recordingState,
+              CallEndPolicy.belongsToCall(recordingStartedAt: since, callStartedAt: callStartedAt) else { return }
+        recordingForCall = true
+        // As from the card: during a calendar meeting, a quiet mic waits for the planned end.
+        recordedMeeting = CalendarTitles.meetingWithLinkOnNow()
     }
 
     /// From the island: the call is over, stop now.
