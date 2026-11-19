@@ -106,13 +106,17 @@ public final class DiarizationStream: @unchecked Sendable {
 
     /// Turns found so far, cleaned up and numbered 1, 2, 3… by first appearance.
     public func turns(speakerCount: Int? = nil) -> [SpeakerTurn] {
-        let raw: [SpeakerTurn] = lock.withLock {
+        DiarizationEngine.renumbered(DiarizationEngine.select(rawTurns(), speakerCount: speakerCount))
+    }
+
+    /// Every turn the model found, quiet voices included, with the model's own speaker slots.
+    public func rawTurns() -> [SpeakerTurn] {
+        lock.withLock {
             diarizer.timeline.speakers.values.flatMap { speaker in
                 speaker.finalizedSegments.map {
                     SpeakerTurn(start: TimeInterval($0.startTime), end: TimeInterval($0.endTime), speaker: $0.speakerIndex)
                 }
             }
         }
-        return DiarizationEngine.renumbered(DiarizationEngine.select(raw, speakerCount: speakerCount))
     }
 }

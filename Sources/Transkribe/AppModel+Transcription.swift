@@ -159,7 +159,7 @@ extension AppModel {
         let offsets = sources.map { pair in current.tracks.first { $0.fileName == pair.0.fileName }?.offset ?? pair.0.offset }
         let ordered = sources.indices.map { results[$0]! }
         // Off the main thread: the echo check reads audio for each line, and a long call has many.
-        let segments = await Self.finalSegments(ordered, sources: sources, offsets: offsets)
+        let segments = await Self.finalSegments(ordered, sources: sources, offsets: offsets, voices: voiceprints)
         let language = TranscriptionEngine.dominantLanguage(
             weights: results.values.map(\.languageWeights).reduce([:], TranscriptionEngine.merge)
         )
@@ -238,11 +238,19 @@ extension AppModel {
 
     /// Speakers, echo removal, and one thread in order, from each track's transcription.
     nonisolated static func finalSegments(_ results: [TrackTranscriber.Result], sources: [(AudioTrack, AudioSource)],
-                                          offsets: [TimeInterval]) async -> [Segment] {
+                                          offsets: [TimeInterval], voices: VoiceprintEngine) async -> [Segment] {
         let withCall = sources.contains { $0.0.source == .system }
         let callSpeech = Self.callSpeech(sources: sources.map(\.0), offsets: offsets, segments: sources.indices.map { results[$0].segments })
+        var turns: [[SpeakerTurn]] = []
+        for index in sources.indices {
+            // The call side (and imported files) can hold many people: tell them apart by voice.
+            // The microphone keeps its own rules for "Me" and people in the room.
+            turns.append(sources[index].0.source == .microphone ? results[index].turns
+                : await separatedTurns(results[index].rawTurns, fallback: results[index].turns,
+                                       source: sources[index].1, voices: voices))
+        }
         var labeled = sources.indices.map {
-            Self.label(results[$0].segments, track: sources[$0].0, turns: results[$0].turns, withCall: withCall, callSpeech: callSpeech)
+            Self.label(results[$0].segments, track: sources[$0].0, turns: turns[$0], withCall: withCall, callSpeech: callSpeech)
         }
         if let mic = sources.firstIndex(where: { $0.0.source == .microphone }),
            let system = sources.firstIndex(where: { $0.0.source == .system }) {
@@ -294,13 +302,28 @@ extension AppModel {
 
     private func relabelSpeakers(in transcript: Transcript, speakerCount: Int?) async throws -> [Segment] {
         let tracks = transcript.tracks.map { ($0, store.audioURL(for: transcript, track: $0)) }
-        return try await Self.relabeled(transcript.segments, tracks: tracks, diarizer: diarizer, speakerCount: speakerCount)
+        return try await Self.relabeled(transcript.segments, tracks: tracks, diarizer: diarizer, voices: voiceprints,
+                                        speakerCount: speakerCount)
+    }
+
+    /// Everyone in `raw` told apart by how they sound (see `VoiceSeparator`), or `fallback` (the
+    /// speaker model's own turns) if the voice model can't run.
+    nonisolated static func separatedTurns(_ raw: [SpeakerTurn], fallback: [SpeakerTurn], speakerCount: Int? = nil,
+                                           source: AudioSource, voices: VoiceprintEngine) async -> [SpeakerTurn] {
+        guard !raw.isEmpty else { return fallback }
+        do {
+            return try await voices.separateVoices(turns: raw, speakerCount: speakerCount) { start, end in
+                try await source.read(from: start, to: end)
+            }
+        } catch {
+            return fallback
+        }
     }
 
     /// Off the main thread: the speaker model runs over the whole recording, seconds per 5-minute
     /// piece, and the app froze while it did.
     nonisolated static func relabeled(_ segments: [Segment], tracks: [(AudioTrack, URL)], diarizer: DiarizationEngine,
-                                      speakerCount: Int?) async throws -> [Segment] {
+                                      voices: VoiceprintEngine, speakerCount: Int?) async throws -> [Segment] {
         var turns: [SpeakerTurn] = []
         let withCall = tracks.contains { $0.0.source == .system }
         // With a call, the count applies to the call side; the mic's voices stay as they are.
@@ -314,7 +337,11 @@ extension AppModel {
                 try stream.append(try await source.read(from: start, to: min(duration, start + 300)))
             }
             try stream.finish()
-            turns += stream.turns(speakerCount: speakerCount).map {
+            let found = track.source == .microphone ? stream.turns(speakerCount: speakerCount)
+                : await separatedTurns(stream.rawTurns(), fallback: stream.turns(speakerCount: speakerCount),
+                                       speakerCount: speakerCount, source: source, voices: voices)
+            try Task.checkCancellation()
+            turns += found.map {
                 SpeakerTurn(start: $0.start + track.offset, end: $0.end + track.offset, speaker: $0.speaker)
             }
         }

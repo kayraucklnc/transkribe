@@ -28,6 +28,9 @@ public final class TrackTranscriber: @unchecked Sendable {
     public struct Result: Sendable {
         public var segments: [RawSegment]
         public var turns: [SpeakerTurn]
+        /// Every turn the speaker model found, before quiet voices are dropped; voice separation
+        /// starts from these.
+        public var rawTurns: [SpeakerTurn] = []
         public var language: String?
         public var languageWeights: [String: Int]
     }
@@ -135,7 +138,7 @@ public final class TrackTranscriber: @unchecked Sendable {
         }
 
         try diarization?.finish()
-        return Result(segments: committed, turns: diarization?.turns() ?? [],
+        return Result(segments: committed, turns: diarization?.turns() ?? [], rawTurns: diarization?.rawTurns() ?? [],
                       language: TranscriptionEngine.dominantLanguage(weights: languageWeights),
                       languageWeights: languageWeights)
     }
